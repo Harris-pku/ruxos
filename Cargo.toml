@@ -41,6 +41,7 @@ members = [
     "modules/ruxnet",
     "modules/axsync",
     "modules/rux9p",
+    "modules/ruxfuse",
     "modules/ruxmm",
     "modules/ruxconfig",
     "modules/ruxdisplay",

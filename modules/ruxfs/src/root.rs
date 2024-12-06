@@ -106,6 +106,9 @@ impl RootDirectory {
             }
         }
 
+        #[cfg(feature = "fusefs")]
+        rusfuse::fuse_open_common(inode, file, isdir);
+
         if max_len == 0 {
             f(self.main_fs.clone(), path) // not matched any mount point
         } else {

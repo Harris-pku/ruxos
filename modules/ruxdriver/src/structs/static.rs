@@ -7,6 +7,8 @@
  *   See the Mulan PSL v2 for more details.
  */
 
+// #[cfg(feature = "fusefs")]
+// pub use crate::drivers::AxFuseDevice;
 #[cfg(feature = "_9p")]
 pub use crate::drivers::Ax9pDevice;
 #[cfg(feature = "block")]
@@ -40,6 +42,12 @@ impl super::AxDeviceEnum {
     pub const fn from_9p(dev: Ax9pDevice) -> Self {
         Self::_9P(dev)
     }
+
+    // /// Constructs a fuse device.
+    // #[cfg(feature = "fusefs")]
+    // pub const fn from_fuse(dev: AxFuseDevice) -> Self {
+    //     Self::Fuse(dev)
+    // }
 }
 
 /// A structure that contains all device drivers of a certain category.

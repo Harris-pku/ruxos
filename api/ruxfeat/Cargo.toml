@@ -50,6 +50,7 @@ fs = ["alloc", "dep:ruxfs", "ruxruntime/fs"]
 blkfs = ["ruxdriver/virtio-blk", "ruxruntime/blkfs"]
 myfs = ["ruxfs?/myfs"]
 9pfs = []
+fusefs = ["ruxfuse/fusefs"]
 
 # Networking
 net = ["alloc", "ruxdriver/virtio-net", "dep:ruxnet", "ruxruntime/net"]
@@ -99,6 +100,7 @@ axalloc = { path = "../../modules/axalloc", optional = true }
 ruxdriver = { path = "../../modules/ruxdriver", optional = true }
 ruxfs = { path = "../../modules/ruxfs", optional = true }
 rux9p = { path = "../../modules/rux9p", optional = true }
+ruxfuse = { path = "../../modules/ruxfuse", optional = true }
 ruxnet = { path = "../../modules/ruxnet", optional = true }
 ruxdisplay = { path = "../../modules/ruxdisplay", optional = true }
 axsync = { path = "../../modules/axsync", optional = true }

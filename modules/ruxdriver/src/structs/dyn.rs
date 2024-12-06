@@ -24,6 +24,9 @@ pub type AxDisplayDevice = Box<dyn DisplayDriverOps>;
 /// The unified type of the 9p devices.
 #[cfg(feature = "_9p")]
 pub type Ax9pDevice = Box<dyn _9pDriverOps>;
+/// The unified type of the fuse devices.
+#[cfg(feature = "fusefs")]
+pub type AxFuseDevice = Box<dyn FuseDriverOps>;
 
 impl super::AxDeviceEnum {
     /// Constructs a network device.
@@ -48,6 +51,12 @@ impl super::AxDeviceEnum {
     #[cfg(feature = "_9p")]
     pub fn from_9p(dev: impl _9pDriverOps + 'static) -> Self {
         Self::_9P(Box::new(dev))
+    }
+
+    /// Constructs a fuse device.
+    #[cfg(feature = "fusefs")]
+    pub fn from_fuse(dev: impl FuseDriverOps + 'static) -> Self {
+        Self::Fuse(Box::new(dev))
     }
 }
 
