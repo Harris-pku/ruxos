@@ -25,7 +25,7 @@ pub type AxDisplayDevice = Box<dyn DisplayDriverOps>;
 #[cfg(feature = "_9p")]
 pub type Ax9pDevice = Box<dyn _9pDriverOps>;
 /// The unified type of the fuse devices.
-#[cfg(feature = "fusefs")]
+// #[cfg(feature = "fusefs")]
 pub type AxFuseDevice = Box<dyn FuseDriverOps>;
 
 impl super::AxDeviceEnum {

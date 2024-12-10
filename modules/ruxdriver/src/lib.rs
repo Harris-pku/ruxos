@@ -93,6 +93,7 @@ pub mod prelude;
 use self::prelude::*;
 pub use self::structs::{AxDeviceContainer, AxDeviceEnum};
 
+pub use self::structs::AxFuseDevice;
 #[cfg(feature = "_9p")]
 pub use self::structs::Ax9pDevice;
 #[cfg(feature = "block")]
@@ -117,6 +118,7 @@ pub struct AllDevices {
     /// All 9p device drivers.
     #[cfg(feature = "_9p")]
     pub _9p: AxDeviceContainer<Ax9pDevice>,
+    pub fuse: AxDeviceContainer<AxFuseDevice>,
 }
 
 impl AllDevices {
