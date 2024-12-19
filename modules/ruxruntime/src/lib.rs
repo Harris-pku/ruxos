@@ -234,7 +234,8 @@ pub extern "C" fn rust_main(cpu_id: usize, dtb: usize) -> ! {
             #[cfg(feature = "blkfs")]
             mount_points.push(ruxfs::init_blkfs(all_devices.block));
 
-            mount_points.push(ruxfuse::init_fusefs(all_devices.fuse));
+            // mount_points.push(ruxfuse::init_fusefs(all_devices.fuse));
+            ruxfs::fusefs::init_fusefs(all_devices.block);
             
             // setup and initialize 9pfs as mountpoint
             #[cfg(feature = "virtio-9p")]

@@ -32,7 +32,7 @@ pub enum AxDeviceEnum {
     _9P(Ax9pDevice),
     // / Fuse fake device.
     // #[cfg(feature = "fusefs")]
-    Fuse(AxFuseDevice),
+    // Fuse(AxFuseDevice),
 }
 
 impl BaseDriverOps for AxDeviceEnum {
