@@ -20,11 +20,13 @@ pub(crate) fn devfs() -> Arc<fs::devfs::DeviceFileSystem> {
     let zero = fs::devfs::ZeroDev;
     let random = fs::devfs::RandomDev;
     let urandom = fs::devfs::RandomDev;
+    let fuse = fs::devfs::FuseDev;
     let devfs = fs::devfs::DeviceFileSystem::new();
     devfs.add("null", Arc::new(null));
     devfs.add("zero", Arc::new(zero));
     devfs.add("random", Arc::new(random));
     devfs.add("urandom", Arc::new(urandom));
+    devfs.add("fuse", Arc::new(fuse));
     Arc::new(devfs)
 }
 
@@ -110,6 +112,9 @@ pub(crate) fn etcfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
 
     // Create /etc/localtime
     etc_root.create("localtime", VfsNodeType::File)?;
+
+    // Create /etc/mnt
+    etc_root.create("mnt", VfsNodeType::File)?;
 
     // Create /etc/hosts
     etc_root.create("hosts", VfsNodeType::File)?;

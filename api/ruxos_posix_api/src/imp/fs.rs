@@ -8,7 +8,7 @@
  */
 
 use alloc::sync::Arc;
-use core::ffi::{c_char, c_int, c_long, c_void};
+use core::ffi::{c_char, c_int, c_long, c_ulong, c_void};
 
 use axerrno::LinuxError;
 use axio::SeekFrom;
@@ -567,6 +567,27 @@ pub fn sys_chdir(path: *const c_char) -> c_int {
     debug!("sys_chdir <= path: {}", p);
     syscall_body!(sys_chdir, {
         set_current_dir(p)?;
+        Ok(0)
+    })
+}
+
+/// mount a filesystem at a specific location in the filesystem tree
+pub fn sys_mount(
+    _source: *const c_char,
+    _target: *const c_char,
+    _filesystemtype: *const c_char,
+    _mountflags: c_ulong,
+    _data: *const c_void,
+) -> c_int {
+    info!(
+        "sys_mount <= source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
+        char_ptr_to_str(_source),
+        char_ptr_to_str(_target),
+        char_ptr_to_str(_filesystemtype),
+        _mountflags,
+        _data
+    );
+    syscall_body!(sys_mount, {
         Ok(0)
     })
 }

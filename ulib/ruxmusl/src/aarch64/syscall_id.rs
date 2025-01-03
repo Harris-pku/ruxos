@@ -28,7 +28,9 @@ pub enum SyscallId {
     #[cfg(feature = "fs")]
     UNLINKAT = 35,
     #[cfg(feature = "fs")]
-    RENAMEAT = 38,
+    RENAMEAT = 38,  
+    #[cfg(feature = "fs")]
+    MOUNT = 40,
     #[cfg(feature = "fs")]
     FACCESSAT = 48,
     #[cfg(feature = "fs")]

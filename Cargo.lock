@@ -1656,6 +1656,7 @@ dependencies = [
  "memory_addr",
  "ruxdriver",
  "spin 0.9.8",
+ "spinlock",
 ]
 
 [[package]]

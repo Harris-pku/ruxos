@@ -19,6 +19,7 @@ mod dir;
 mod null;
 mod random;
 mod zero;
+mod fuse;
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,7 @@ pub use self::dir::DirNode;
 pub use self::null::NullDev;
 pub use self::random::RandomDev;
 pub use self::zero::ZeroDev;
+pub use self::fuse::FuseDev;
 
 use alloc::sync::Arc;
 use axfs_vfs::{VfsNodeRef, VfsOps, VfsResult};
