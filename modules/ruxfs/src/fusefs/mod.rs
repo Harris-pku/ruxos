@@ -7,7 +7,7 @@
  *   See the Mulan PSL v2 for more details.
  */
 
-// use alloc::{string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 // use alloc::collections::BTreeMap;
 use alloc::sync::{Arc, Weak};
 // use core::sync::Mutex;
@@ -19,6 +19,7 @@ use alloc::rc::Rc;
 //     VfsResult,
 // };
 use spin::{once::Once, RwLock};
+use spinlock::SpinNoIrq;
 
 use log::*;
 // use super::{MountPoint, mounts};
@@ -35,9 +36,9 @@ pub fn test_fuse(one: u32) {
 }
 
 // static FUSE_CONN_LIST: Mutex<ListHead> = Mutex::new(ListHead::new());
-// static FUSE_CONN_LIST: RwLock<ListHead> = RwLock::new(ListHead::new());
+// static FUSE_CONN_LIST: SpinNoIrq<ListHead> = SpinNoIrq::new(ListHead::new());
 
-pub fn init_fusefs(_fuse_devs: AxDeviceContainer<AxBlockDevice>) {
+pub fn init_fusefs(_fuse_devs: AxDeviceContainer<AxBlockDevice>) -> u32 {
     info!("Initialize fusefs...");
 
     // let fuse = fuse_devs.take_one().expect("No fusefs device found!");
@@ -50,6 +51,7 @@ pub fn init_fusefs(_fuse_devs: AxDeviceContainer<AxBlockDevice>) {
     let mut res: u32 = fuse_dev_init();
     let mut res: u32 = fuse_sysfs_init();
     let mut res: u32 = fuse_ctl_init();
+    res
 }
 
 pub fn fuse_fs_init() -> u32 {
@@ -58,12 +60,16 @@ pub fn fuse_fs_init() -> u32 {
 
     // register_fuseblk()
     // register_filesystem()
-    return 0;
+    0
 }
 
 pub fn fuse_dev_init() -> u32 {
-
-    return 1;
+    let fuse_name = String::from("fuse");
+    // let fuse_miscdevice = MiscDevice::new(FUSE_MINOR, fuse_name);
+    // let res = misc_register(fuse_miscdevice);
+    // res
+    0
+    // if res: misc_deregister
 }
 
 pub fn fuse_sysfs_init() -> u32 {

@@ -30,9 +30,6 @@ pub enum AxDeviceEnum {
     /// Plan-9 protocol device.
     #[cfg(feature = "_9p")]
     _9P(Ax9pDevice),
-    // / Fuse fake device.
-    // #[cfg(feature = "fusefs")]
-    // Fuse(AxFuseDevice),
 }
 
 impl BaseDriverOps for AxDeviceEnum {
@@ -48,8 +45,6 @@ impl BaseDriverOps for AxDeviceEnum {
             Self::Display(_) => DeviceType::Display,
             #[cfg(feature = "_9p")]
             Self::_9P(_) => DeviceType::_9P,
-            // #[cfg(feature = "fusefs")]
-            // Self::Fuse(_) => DeviceType::Fuse,
             _ => unreachable!(),
         }
     }
@@ -66,8 +61,6 @@ impl BaseDriverOps for AxDeviceEnum {
             Self::Display(dev) => dev.device_name(),
             #[cfg(feature = "_9p")]
             Self::_9P(dev) => dev.device_name(),
-            // #[cfg(feature = "fusefs")]
-            // Self::Fuse(dev) => dev.device_name(),
             _ => unreachable!(),
         }
     }
