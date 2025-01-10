@@ -72,6 +72,11 @@ pub fn syscall(syscall_id: SyscallId, args: [usize; 6]) -> isize {
                 args[3] as *const core::ffi::c_char,
             ) as _,
             #[cfg(feature = "fs")]
+            SyscallId::UMOUNT2 => ruxos_posix_api::sys_umount2(
+                args[0] as *const c_char,
+                args[1] as c_int,
+            ) as _,
+            #[cfg(feature = "fs")]
             SyscallId::MOUNT => ruxos_posix_api::sys_mount(
                 args[0] as *const c_char,
                 args[1] as *const c_char,

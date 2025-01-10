@@ -7,11 +7,11 @@
  *   See the Mulan PSL v2 for more details.
  */
 
-use alloc::{string::String, vec::Vec};
+#![allow(unused_variables)]
+use alloc::string::String;
 // use alloc::collections::BTreeMap;
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
 // use core::sync::Mutex;
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::RefCell;
 use alloc::rc::Rc;
 // use axfs_vfs::{

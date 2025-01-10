@@ -28,7 +28,9 @@ pub enum SyscallId {
     #[cfg(feature = "fs")]
     UNLINKAT = 35,
     #[cfg(feature = "fs")]
-    RENAMEAT = 38,  
+    RENAMEAT = 38,
+    #[cfg(feature = "fs")]
+    UMOUNT2 = 39,
     #[cfg(feature = "fs")]
     MOUNT = 40,
     #[cfg(feature = "fs")]
@@ -98,6 +100,7 @@ pub enum SyscallId {
     TIMES = 153,
     SETPGID = 154,
     GETPGID = 155,
+    // SETSID = 157,
     UNAME = 160,
     GETRLIMIT = 163,
     SETRLIMIT = 164,

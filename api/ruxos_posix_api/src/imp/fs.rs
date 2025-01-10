@@ -571,6 +571,21 @@ pub fn sys_chdir(path: *const c_char) -> c_int {
     })
 }
 
+/// umount a filesystem at a specific location in the filesystem tree
+pub fn sys_umount2(target: *const c_char, flags: c_int) -> c_int {
+    info!(
+        "sys_umount2 => target: {:?}, flags: {:#x}",
+        char_ptr_to_str(target),
+        flags
+    );
+    syscall_body!(sys_umount2, {
+        let target = char_ptr_to_str(target)?;
+        let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
+        dir.umount(target)?;
+        Ok(0)
+    })
+}
+
 /// mount a filesystem at a specific location in the filesystem tree
 pub fn sys_mount(
     _source: *const c_char,
@@ -580,7 +595,7 @@ pub fn sys_mount(
     _data: *const c_void,
 ) -> c_int {
     info!(
-        "sys_mount <= source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
+        "sys_mount => source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
         char_ptr_to_str(_source),
         char_ptr_to_str(_target),
         char_ptr_to_str(_filesystemtype),
@@ -588,6 +603,14 @@ pub fn sys_mount(
         _data
     );
     syscall_body!(sys_mount, {
+        let f1 = 2; //ctypes::MS_NODEV;
+        let f2 = 4; //ctypes::MS_NOSUID;
+        info!("mount flags: {:#x}, f1: {:#}, f2: {:#}, flag: {:#}", _mountflags, f1, f2, f1|f2);
+        let target = char_ptr_to_str(_target)?;
+        let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
+        let mount_point = ruxfs::root::MountPoint::new(target, ruxfs::fuse::fusefs());
+        let vfsops = mount_point.fs.clone();
+        dir.mount(target, vfsops)?;
         Ok(0)
     })
 }

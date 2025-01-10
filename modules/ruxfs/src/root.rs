@@ -16,8 +16,10 @@ use axerrno::{ax_err, AxError, AxResult};
 use axfs_vfs::{VfsError, VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType, VfsOps, VfsResult};
 
 use crate::api::FileType;
+use spinlock::SpinNoIrq;
 
 /// mount point information
+#[derive(Clone)]
 pub struct MountPoint {
     pub path: &'static str,
     pub fs: Arc<dyn VfsOps>,
@@ -25,7 +27,7 @@ pub struct MountPoint {
 
 pub struct RootDirectory {
     main_fs: Arc<dyn VfsOps>,
-    mounts: Vec<MountPoint>,
+    mounts_lock: SpinNoIrq<Vec<MountPoint>>,
 }
 
 // static ROOT_DIR: LazyInit<Arc<RootDirectory>> = LazyInit::new();
@@ -47,18 +49,20 @@ impl RootDirectory {
     pub const fn new(main_fs: Arc<dyn VfsOps>) -> Self {
         Self {
             main_fs,
-            mounts: Vec::new(),
+            mounts_lock: SpinNoIrq::new(Vec::new()),
         }
     }
 
-    pub fn mount(&mut self, path: &'static str, fs: Arc<dyn VfsOps>) -> AxResult {
+    pub fn mount(&self, path: &'static str, fs: Arc<dyn VfsOps>) -> AxResult {
         if path == "/" {
             return ax_err!(InvalidInput, "cannot mount root filesystem");
         }
         if !path.starts_with('/') {
             return ax_err!(InvalidInput, "mount path must start with '/'");
         }
-        if self.mounts.iter().any(|mp| mp.path == path) {
+        let mut mounts_guard = self.mounts_lock.lock();
+        let mounts = &mut *mounts_guard;
+        if mounts.iter().any(|mp| mp.path == path) {
             return ax_err!(InvalidInput, "mount point already exists");
         }
         // create the mount point in the main filesystem if it does not exist
@@ -71,16 +75,27 @@ impl RootDirectory {
             }
         }
         fs.mount(path, self.main_fs.root_dir().lookup(path)?)?;
-        self.mounts.push(MountPoint::new(path, fs));
+        mounts.push(MountPoint::new(path, fs));
+        // for mp in mounts.iter() {
+        //     info!("mounts_vec: {:?}", mp.path);
+        // }
+        info!("mounts_vec last: {:?}", mounts.last().unwrap().path);
+        *mounts_guard = mounts.to_vec();
+        // self.mounts_lock.lock().replace(mounts);
+        // self.mounts_lock.unlock(mounts);
         Ok(())
     }
 
-    pub fn _umount(&mut self, path: &str) {
-        self.mounts.retain(|mp| mp.path != path);
+    pub fn umount(&self, path: &str) -> AxResult {
+        self.mounts_lock.lock().retain(|mp| mp.path != path);
+        // for mp in self.mounts_lock.lock().iter() {
+        //     info!("after umount: mounts_vec: {:?}", mp.path);
+        // }
+        Ok(())
     }
 
     pub fn contains(&self, path: &str) -> bool {
-        self.mounts.iter().any(|mp| mp.path == path)
+        self.mounts_lock.lock().iter().any(|mp| mp.path == path)
     }
 
     fn lookup_mounted_fs<F, T>(&self, path: &str, f: F) -> AxResult<T>
@@ -98,7 +113,7 @@ impl RootDirectory {
 
         // Find the filesystem that has the longest mounted path match
         // TODO: more efficient, e.g. trie
-        for (i, mp) in self.mounts.iter().enumerate() {
+        for (i, mp) in self.mounts_lock.lock().iter().enumerate() {
             // skip the first '/'
             if path.starts_with(&mp.path[1..]) && mp.path.len() - 1 > max_len {
                 max_len = mp.path.len() - 1;
@@ -112,7 +127,8 @@ impl RootDirectory {
         if max_len == 0 {
             f(self.main_fs.clone(), path) // not matched any mount point
         } else {
-            f(self.mounts[idx].fs.clone(), &path[max_len..]) // matched at `idx`
+            let mounts = self.mounts_lock.lock();
+            f(mounts[idx].fs.clone(), &path[max_len..]) // matched at `idx`
         }
     }
 }
