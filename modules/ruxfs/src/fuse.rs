@@ -30,17 +30,17 @@ impl FuseFS {
         }
     }
 
-    // /// Create a subdirectory at the root directory.
-    // pub fn mkdir(&self, name: &'static str) -> Arc<DirNode> {
-    //     self.root.mkdir(name)
-    // }
+    /// Create a subdirectory at the root directory.
+    pub fn mkdir(&self, name: &'static str) -> Arc<FuseNode> {
+        self.root.mkdir(name)
+    }
 
-    // /// Add a node to the root directory.
-    // ///
-    // /// The node must implement [`axfs_vfs::VfsNodeOps`], and be wrapped in [`Arc`].
-    // pub fn add(&self, name: &'static str, node: VfsNodeRef) {
-    //     self.root.add(name, node);
-    // }
+    /// Add a node to the root directory.
+    ///
+    /// The node must implement [`axfs_vfs::VfsNodeOps`], and be wrapped in [`Arc`].
+    pub fn add(&self, name: &'static str, node: VfsNodeRef) {
+        self.root.add(name, node);
+    }
 }
 
 impl VfsOps for FuseFS {

@@ -100,7 +100,7 @@ pub enum SyscallId {
     TIMES = 153,
     SETPGID = 154,
     GETPGID = 155,
-    // SETSID = 157,
+    SETSID = 157,
     UNAME = 160,
     GETRLIMIT = 163,
     SETRLIMIT = 164,
@@ -157,4 +157,6 @@ pub enum SyscallId {
     WAIT4 = 260,
     PRLIMIT64 = 261,
     GETRANDOM = 278,
+    #[cfg(feature = "fs")]
+    MEMBARRIER = 283,
 }

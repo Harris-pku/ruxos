@@ -53,7 +53,7 @@ pub use imp::resources::{sys_getrlimit, sys_prlimit64, sys_setrlimit};
 pub use imp::rt_sig::{sys_rt_sigaction, sys_rt_sigprocmask};
 pub use imp::stat::{
     sys_getegid, sys_geteuid, sys_getgid, sys_getpgid, sys_getuid, sys_setgid, sys_setpgid,
-    sys_setuid, sys_umask,
+    sys_setuid, sys_umask, sys_setsid,
 };
 pub use imp::sys::{sys_sysinfo, sys_uname};
 pub use imp::sys_invalid;
@@ -72,7 +72,7 @@ pub use imp::fs::{
     sys_chdir, sys_faccessat, sys_fchownat, sys_fdatasync, sys_fstat, sys_fsync, sys_getcwd,
     sys_getdents64, sys_lseek, sys_lstat, sys_mkdir, sys_mkdirat, sys_newfstatat, sys_open,
     sys_openat, sys_pread64, sys_preadv, sys_pwrite64, sys_readlinkat, sys_rename, sys_renameat,
-    sys_rmdir, sys_stat, sys_unlink, sys_unlinkat, sys_umount2, sys_mount,
+    sys_rmdir, sys_stat, sys_unlink, sys_unlinkat, sys_umount2, sys_mount, sys_membarrier,
 };
 #[cfg(feature = "epoll")]
 pub use imp::io_mpx::{sys_epoll_create, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_wait};

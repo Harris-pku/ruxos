@@ -113,9 +113,6 @@ pub(crate) fn etcfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
     // Create /etc/localtime
     etc_root.create("localtime", VfsNodeType::File)?;
 
-    // Create /etc/mnt
-    etc_root.create("mnt", VfsNodeType::File)?;
-
     // Create /etc/hosts
     etc_root.create("hosts", VfsNodeType::File)?;
     let file_hosts = etc_root.clone().lookup("hosts")?;
@@ -142,4 +139,15 @@ pub(crate) fn etcfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
     )?;
 
     Ok(Arc::new(etcfs))
+}
+
+#[cfg(feature = "sysfs")]
+pub(crate) fn mntfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
+    let mntfs = fs::ramfs::RamFileSystem::new();
+    let mnt_root = mntfs.root_dir();
+
+    // Create /mnt/fuse
+    mnt_root.create("fuse", VfsNodeType::File)?;
+
+    Ok(Arc::new(mntfs))
 }

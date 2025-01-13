@@ -113,6 +113,12 @@ pub fn prepare_commonfs(mount_points: &mut Vec<self::root::MountPoint>) {
     #[cfg(feature = "etcfs")]
     let mount_point = MountPoint::new("/etc", mounts::etcfs().unwrap());
     mount_points.push(mount_point);
+
+    // Mount another ramfs as mntfs
+    #[cfg(feature = "sysfs")]
+    let mount_point = MountPoint::new("/mnt", mounts::mntfs().unwrap());
+    mount_points.push(mount_point);
+
 }
 
 /// Initializes root filesystems.

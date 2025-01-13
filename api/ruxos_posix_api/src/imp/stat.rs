@@ -61,3 +61,9 @@ pub fn sys_setpgid(pid: pid_t, pgid: pid_t) -> c_int {
     debug!("sys_setpgid: pid {}, pgid {} ", pid, pgid);
     syscall_body!(sys_setpgid, Ok(0))
 }
+
+/// create a new session
+pub fn sys_setsid() -> pid_t {
+    info!("sys_setsid: create a new session");
+    syscall_body!(sys_setsid, Ok(1000))
+}
