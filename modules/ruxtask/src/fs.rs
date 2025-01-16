@@ -255,7 +255,7 @@ pub fn init_rootfs(mount_points: Vec<MountPoint>) {
     let root_dir = RootDirectory::new(main_fs);
 
     for mp in mount_points.iter().skip(1) {
-        let path = mp.path;
+        let path = mp.path.clone();
         let vfsops = mp.fs.clone();
         let message = format!("failed to mount filesystem at {}", path);
         info!("mounting {}", path);

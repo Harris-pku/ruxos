@@ -21,7 +21,7 @@ use spinlock::SpinNoIrq;
 /// mount point information
 #[derive(Clone)]
 pub struct MountPoint {
-    pub path: &'static str,
+    pub path: String,
     pub fs: Arc<dyn VfsOps>,
 }
 
@@ -34,7 +34,7 @@ pub struct RootDirectory {
 
 impl MountPoint {
     /// create new MountPoint from data
-    pub fn new(path: &'static str, fs: Arc<dyn VfsOps>) -> Self {
+    pub fn new(path: String, fs: Arc<dyn VfsOps>) -> Self {
         Self { path, fs }
     }
 }
@@ -53,7 +53,7 @@ impl RootDirectory {
         }
     }
 
-    pub fn mount(&self, path: &'static str, fs: Arc<dyn VfsOps>) -> AxResult {
+    pub fn mount(&self, path: String, fs: Arc<dyn VfsOps>) -> AxResult {
         if path == "/" {
             return ax_err!(InvalidInput, "cannot mount root filesystem");
         }
@@ -66,21 +66,21 @@ impl RootDirectory {
             return ax_err!(InvalidInput, "mount point already exists");
         }
         // create the mount point in the main filesystem if it does not exist
-        match self.main_fs.root_dir().lookup(path) {
+        match self.main_fs.root_dir().lookup(&path) {
             Ok(_) => {}
             Err(err_code) => {
                 if err_code == VfsError::NotFound {
-                    self.main_fs.root_dir().create(path, FileType::Dir)?;
+                    self.main_fs.root_dir().create(&path, FileType::Dir)?;
                 }
             }
         }
-        fs.mount(path, self.main_fs.root_dir().lookup(path)?)?;
+        fs.mount(&path, self.main_fs.root_dir().lookup(&path)?)?;
         mounts.push(MountPoint::new(path, fs));
         // for mp in mounts.iter() {
         //     info!("mounts_vec: {:?}", mp.path);
         // }
         info!("mounts_vec last: {:?}", mounts.last().unwrap().path);
-        *mounts_guard = mounts.to_vec();
+        // *mounts_guard = mounts.to_vec();
         // self.mounts_lock.lock().replace(mounts);
         // self.mounts_lock.unlock(mounts);
         Ok(())
@@ -111,6 +111,14 @@ impl RootDirectory {
         let mut idx = 0;
         let mut max_len = 0;
 
+        // info!("root lookup - 0");
+
+        // for (i, mp) in self.mounts_lock.lock().iter().enumerate() {
+        //     info!("mounts_vec: {:?}", mp.path);
+        // }
+
+        // info!("root lookup - 1");
+
         // Find the filesystem that has the longest mounted path match
         // TODO: more efficient, e.g. trie
         for (i, mp) in self.mounts_lock.lock().iter().enumerate() {
@@ -121,8 +129,7 @@ impl RootDirectory {
             }
         }
 
-        #[cfg(feature = "fusefs")]
-        rusfuse::fuse_open_common(inode, file, isdir);
+        info!("path = {:#}, idx = {:#}", path, idx);
 
         if max_len == 0 {
             f(self.main_fs.clone(), path) // not matched any mount point

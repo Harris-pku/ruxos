@@ -8,6 +8,7 @@
  */
 
 use alloc::sync::Arc;
+use alloc::string::String;
 use core::ffi::{c_char, c_int, c_long, c_ulong, c_void};
 
 use axerrno::LinuxError;
@@ -571,10 +572,13 @@ pub fn sys_chdir(path: *const c_char) -> c_int {
     })
 }
 
+pub const MS_NODEV: u32 = 2;
+pub const MS_NOSUID: u32 = 4;
+
 /// umount a filesystem at a specific location in the filesystem tree
 pub fn sys_umount2(target: *const c_char, flags: c_int) -> c_int {
     info!(
-        "sys_umount2 => target: {:?}, flags: {:#x}",
+        "sys_umount2 <= target: {:?}, flags: {:#x}",
         char_ptr_to_str(target),
         flags
     );
@@ -595,7 +599,7 @@ pub fn sys_mount(
     _data: *const c_void,
 ) -> c_int {
     info!(
-        "sys_mount => source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
+        "sys_mount <= source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
         char_ptr_to_str(_source),
         char_ptr_to_str(_target),
         char_ptr_to_str(_filesystemtype),
@@ -603,19 +607,25 @@ pub fn sys_mount(
         _data
     );
     syscall_body!(sys_mount, {
-        let f1 = 2; //ctypes::MS_NODEV;
-        let f2 = 4; //ctypes::MS_NOSUID;
+        let f1 = MS_NODEV; //ctypes::MS_NODEV;
+        let f2 = MS_NOSUID; //ctypes::MS_NOSUID;
         info!("mount flags: {:#x}, f1: {:#}, f2: {:#}, flag: {:#}", _mountflags, f1, f2, f1|f2);
+        if _mountflags != (f1 | f2).into() {
+            return Err(LinuxError::EINVAL);
+        }
         let target = char_ptr_to_str(_target)?;
+        let target = String::from(target);
         let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
-        let mount_point = ruxfs::root::MountPoint::new(target, ruxfs::fuse::fusefs());
-        let vfsops = mount_point.fs.clone();
+        // let mount_point = ruxfs::root::MountPoint::new(target1, ruxfs::fuse::fusefs());
+        // let vfsops = mount_point.fs.clone();
+        let vfsops = ruxfs::fuse::fusefs();
+        info!("mounting filesystem at {}", target);
         dir.mount(target, vfsops)?;
         Ok(0)
     })
 }
 
 pub fn sys_membarrier(cmd: c_int, flags: c_int) -> c_int {
-    info!("sys_membarrier => cmd: {}, flags: {}", cmd, flags);
+    info!("sys_membarrier <= cmd: {}, flags: {}", cmd, flags);
     syscall_body!(sys_membarrier, Ok(0))
 }

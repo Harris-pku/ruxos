@@ -60,11 +60,12 @@ cfg_if::cfg_if! {
 }
 
 pub use root::MountPoint;
+use alloc::string::String;
 
 /// Initialize an empty filesystems by ramfs.
 #[cfg(not(any(feature = "blkfs", feature = "virtio-9p", feature = "net-9p")))]
 pub fn init_tempfs() -> MountPoint {
-    MountPoint::new("/", mounts::ramfs())
+    MountPoint::new(String::from("/"), mounts::ramfs())
 }
 
 /// Initializes filesystems by block devices.
@@ -86,37 +87,37 @@ pub fn init_blkfs(mut blk_devs: AxDeviceContainer<AxBlockDevice>) -> MountPoint 
         }
     }
 
-    MountPoint::new("/", blk_fs)
+    MountPoint::new(String::from("/"), blk_fs)
 }
 
 /// Initializes common filesystems.
 pub fn prepare_commonfs(mount_points: &mut Vec<self::root::MountPoint>) {
     #[cfg(feature = "devfs")]
-    let mount_point = MountPoint::new("/dev", mounts::devfs());
+    let mount_point = MountPoint::new(String::from("/dev"), mounts::devfs());
     mount_points.push(mount_point);
 
     #[cfg(feature = "ramfs")]
-    let mount_point = MountPoint::new("/tmp", mounts::ramfs());
+    let mount_point = MountPoint::new(String::from("/tmp"), mounts::ramfs());
     mount_points.push(mount_point);
 
     // Mount another ramfs as procfs
     #[cfg(feature = "procfs")]
-    let mount_point = MountPoint::new("/proc", mounts::procfs().unwrap());
+    let mount_point = MountPoint::new(String::from("/proc"), mounts::procfs().unwrap());
     mount_points.push(mount_point);
 
     // Mount another ramfs as sysfs
     #[cfg(feature = "sysfs")]
-    let mount_point = MountPoint::new("/sys", mounts::sysfs().unwrap());
+    let mount_point = MountPoint::new(String::from("/sys"), mounts::sysfs().unwrap());
     mount_points.push(mount_point);
 
     // Mount another ramfs as etcfs
     #[cfg(feature = "etcfs")]
-    let mount_point = MountPoint::new("/etc", mounts::etcfs().unwrap());
+    let mount_point = MountPoint::new(String::from("/etc"), mounts::etcfs().unwrap());
     mount_points.push(mount_point);
 
     // Mount another ramfs as mntfs
     #[cfg(feature = "sysfs")]
-    let mount_point = MountPoint::new("/mnt", mounts::mntfs().unwrap());
+    let mount_point = MountPoint::new(String::from("/mnt"), mounts::mntfs().unwrap());
     mount_points.push(mount_point);
 
 }

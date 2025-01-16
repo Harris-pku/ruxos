@@ -44,7 +44,7 @@ pub fn init_fusefs(_fuse_devs: AxDeviceContainer<AxBlockDevice>) -> u32 {
     // let fuse = fuse_devs.take_one().expect("No fusefs device found!");
     // info!("  use fusefs device 0: {:?}", fuse.device_name());
 
-    // MountPoint::new("/", mounts::ramfs())
+    // MountPoint::new(String::from("/"), mounts::ramfs())
 
     // init_list_head(FUSE_CONN_LIST);
     let mut res: u32 = fuse_fs_init();

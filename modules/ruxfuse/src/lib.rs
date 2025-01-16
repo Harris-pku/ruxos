@@ -44,8 +44,8 @@ pub fn init_fusefs(mut fuse_devs: AxDeviceContainer<AxFuseDevice>) -> MountPoint
     // let v9p_driver = self::drv::Drv9pOps::new(fuse);
     // let v9p_fs = self::fs::_9pFileSystem::new(Arc::new(RwLock::new(v9p_driver)), aname, protocol);
 
-    // MountPoint::new("/v9fs", Arc::new(v9p_fs))
-    MountPoint::new("/", mounts::ramfs())
+    // MountPoint::new(String::from("/v9fs"), Arc::new(v9p_fs))
+    MountPoint::new(String::from("/"), mounts::ramfs())
 }
 
 
