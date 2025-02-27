@@ -20,7 +20,8 @@ pub(crate) fn devfs() -> Arc<fs::devfs::DeviceFileSystem> {
     let zero = fs::devfs::ZeroDev;
     let random = fs::devfs::RandomDev;
     let urandom = fs::devfs::RandomDev;
-    let fuse = fs::devfs::FuseDev;
+    let fuse = crate::fusedev::FuseDev::new();
+    // let fuse = fs::devfs::FuseDev::new();
     let devfs = fs::devfs::DeviceFileSystem::new();
     devfs.add("null", Arc::new(null));
     devfs.add("zero", Arc::new(zero));
@@ -147,7 +148,7 @@ pub(crate) fn mntfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
     let mnt_root = mntfs.root_dir();
 
     // Create /mnt/fuse
-    mnt_root.create("fuse", VfsNodeType::File)?;
+    mnt_root.create("fuse", VfsNodeType::Dir)?;
 
     Ok(Arc::new(mntfs))
 }

@@ -13,6 +13,7 @@ use alloc::sync::{Arc, Weak};
 use axfs_vfs::{VfsDirEntry, VfsError, VfsResult};
 use axfs_vfs::{VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType, VfsOps};
 use spin::{once::Once, RwLock};
+use crate::fuse_dev::fuse_in_header;
 
 /// It implements [`axfs_vfs::VfsOps`].
 pub struct FuseFS {
@@ -23,6 +24,7 @@ pub struct FuseFS {
 impl FuseFS {
     /// Create a new instance.
     pub fn new() -> Self {
+        info!("fusefs init...");
         // let parent: Weak<dyn VfsNodeOps> = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
         Self {
             parent: Once::new(),
@@ -32,6 +34,7 @@ impl FuseFS {
 
     /// Create a subdirectory at the root directory.
     pub fn mkdir(&self, name: &'static str) -> Arc<FuseNode> {
+        info!("fusefs mkdir...");
         self.root.mkdir(name)
     }
 
@@ -39,12 +42,14 @@ impl FuseFS {
     ///
     /// The node must implement [`axfs_vfs::VfsNodeOps`], and be wrapped in [`Arc`].
     pub fn add(&self, name: &'static str, node: VfsNodeRef) {
+        info!("fusefs add...");
         self.root.add(name, node);
     }
 }
 
 impl VfsOps for FuseFS {
     fn mount(&self, _path: &str, mount_point: VfsNodeRef) -> VfsResult {
+        info!("fusefs mount...");
         if let Some(parent) = mount_point.parent() {
             self.root.set_parent(Some(self.parent.call_once(|| parent)));
         } else {
@@ -54,12 +59,14 @@ impl VfsOps for FuseFS {
     }
 
     fn root_dir(&self) -> VfsNodeRef {
+        info!("fusefs root_dir...");
         self.root.clone()
     }
 }
 
 impl Default for FuseFS {
     fn default() -> Self {
+        info!("fusefs default...");
         Self::new()
     }
 }
@@ -72,6 +79,7 @@ pub struct FuseNode {
 
 impl FuseNode {
     pub(super) fn new(parent: Option<&VfsNodeRef>) -> Arc<Self> {
+        info!("fuse_node new...");
         let parent = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
         Arc::new(Self {
             parent: RwLock::new(parent),
@@ -80,11 +88,13 @@ impl FuseNode {
     }
 
     pub(super) fn set_parent(&self, parent: Option<&VfsNodeRef>) {
+        info!("fuse_node set_parent...");
         *self.parent.write() = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
     }
 
     /// Create a subdirectory at this directory.
     pub fn mkdir(self: &Arc<Self>, name: &'static str) -> Arc<Self> {
+        info!("fuse_node mkdir...");
         let parent = self.clone() as VfsNodeRef;
         let node = Self::new(Some(&parent));
         self.children.write().insert(name, node.clone());
@@ -93,20 +103,37 @@ impl FuseNode {
 
     /// Add a node to this directory.
     pub fn add(&self, name: &'static str, node: VfsNodeRef) {
+        info!("fuse_node add...");
         self.children.write().insert(name, node);
+    }
+
+    pub fn init(&self) {
+        info!("fuse_node init...");
     }
 }
 
 impl VfsNodeOps for FuseNode {
+    fn open(&self) -> VfsResult {
+        info!("fuse_node open here...");
+        
+        Ok(())
+    }
+
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
+        info!("fuse_node get_attr here...");
         Ok(VfsNodeAttr::new_dir(4096, 0))
     }
 
     fn parent(&self) -> Option<VfsNodeRef> {
+        info!("fuse_node parent here...");
         self.parent.read().upgrade()
     }
 
     fn lookup(self: Arc<Self>, path: &str) -> VfsResult<VfsNodeRef> {
+        info!("fuse_node lookup here...");
+        // fuse_lookiup = 1
+        let fusein = fuse_in_header::new(1052672, 1, 370, 2, 0, 0, 0, 0);
+        fusein.write_to(&mut [0; 1052672]);
         let (name, rest) = split_path(path);
         let node = match name {
             "" | "." => Ok(self.clone() as VfsNodeRef),
@@ -127,6 +154,10 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn read_dir(&self, start_idx: usize, dirents: &mut [VfsDirEntry]) -> VfsResult<usize> {
+        info!("fuse_node read_dir here...");
+        // fuse_readdir = 28
+        // let fusein = fuse_in_header::new(1052672, 28, 370, 2, 0, 0, 0, 0);
+        // fusein.write_to(&mut [0; 1052672]);
         let children = self.children.read();
         let mut children = children.iter().skip(start_idx.max(2) - 2);
         for (i, ent) in dirents.iter_mut().enumerate() {
@@ -146,6 +177,7 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn create(&self, path: &str, ty: VfsNodeType) -> VfsResult {
+        info!("fuse_node create here...");
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
             match name {
@@ -166,6 +198,7 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn remove(&self, path: &str) -> VfsResult {
+        info!("fuse_node remove here...");
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
             match name {
@@ -194,5 +227,6 @@ fn split_path(path: &str) -> (&str, Option<&str>) {
 }
 
 pub fn fusefs() -> Arc<FuseFS> {
+    info!("fusefs newfs here...");
     Arc::new(FuseFS::new())
 }
