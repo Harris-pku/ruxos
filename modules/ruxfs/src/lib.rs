@@ -41,7 +41,7 @@ mod mounts;
 pub mod root;
 pub mod fuse;
 pub mod fusedev;
-pub mod fuse_dev;
+pub mod fuse_st;
 
 #[cfg(feature = "alloc")]
 mod arch;

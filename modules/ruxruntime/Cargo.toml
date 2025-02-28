@@ -27,9 +27,8 @@ multitask = ["ruxtask/multitask", "dep:ruxfutex", "rand"]
 rand = ["dep:ruxrand"]
 fs = ["ruxdriver", "ruxfs", "ruxtask/fs"]
 blkfs = ["fs"]
-virtio-9p = ["fs", "rux9p", "ruxfuse"]
+virtio-9p = ["fs", "rux9p"]
 net-9p = ["fs", "rux9p"]
-fusefs = ["fs", "ruxfuse"]
 net = ["ruxdriver", "ruxnet"]
 display = ["ruxdriver", "ruxdisplay"]
 signal = []
@@ -46,7 +45,6 @@ axalloc = { path = "../axalloc", optional = true }
 ruxdriver = { path = "../ruxdriver", optional = true }
 ruxfs = { path = "../ruxfs", optional = true }
 rux9p = { path = "../rux9p", optional = true }
-ruxfuse = { path = "../ruxfuse", optional = true }
 ruxnet = { path = "../ruxnet", optional = true }
 ruxdisplay = { path = "../ruxdisplay", optional = true }
 ruxtask = { path = "../ruxtask", optional = true }

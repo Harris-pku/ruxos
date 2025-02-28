@@ -22,8 +22,8 @@ fn fuse_aio_complete(io: &mut FuseIoPriv, err: c_int, pos: ssize_t) {
     let _lock = io.lock.lock().unwrap();
     if err != 0 {  
         io.err = if io.err != 0 { io.err } else { err };  
-    } else if pos >= 0 && (io.bytes < 0 || pos as isize < io.bytes as isize) {  
-        io.bytes = pos;  
+    // } else if pos >= 0 && (io.bytes < 0 || pos as isize < io.bytes as isize) {  
+    //     io.bytes = pos;  
     }  
  
     left = io.reqs.wrapping_sub(1);  

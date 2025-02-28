@@ -1664,10 +1664,7 @@ name = "ruxfuse"
 version = "0.1.0"
 dependencies = [
  "axfs_vfs",
- "axsync",
  "log",
- "ruxdriver",
- "ruxfs",
  "spin 0.9.8",
 ]
 
@@ -1870,7 +1867,6 @@ dependencies = [
  "ruxdisplay",
  "ruxdriver",
  "ruxfs",
- "ruxfuse",
  "ruxfutex",
  "ruxhal",
  "ruxmm",

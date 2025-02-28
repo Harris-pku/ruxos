@@ -50,7 +50,6 @@ fs = ["alloc", "dep:ruxfs", "ruxruntime/fs"]
 blkfs = ["ruxdriver/virtio-blk", "ruxruntime/blkfs"]
 myfs = ["ruxfs?/myfs"]
 9pfs = []
-fusefs = ["ruxfuse/fusefs"]
 
 # Networking
 net = ["alloc", "ruxdriver/virtio-net", "dep:ruxnet", "ruxruntime/net"]

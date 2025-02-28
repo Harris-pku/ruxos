@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use axfs_vfs::{VfsNodeAttr, VfsNodeOps, VfsNodePerm, VfsNodeType, VfsResult};
 use log::{info, debug};
 use spin::Mutex;
-use spinlock::SpinNoIrq;
+// use spinlock::SpinNoIrq;
 use alloc::vec::Vec;
 use alloc::vec;
 
@@ -80,13 +80,13 @@ impl VfsNodeOps for FuseDev {
         // buf.copy_from_slice([1,2 ,3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
         // ruxtask::task::yield_now();
 
-        // loop {
-        //     let flag = FUSEFLAG.load(Ordering::SeqCst);
-        //     if flag == 1 {
-        //         info!("Fuseflag is set to 1, exiting loop.");
-        //         break;
-        //     }
-        // }
+        loop {
+            let flag = FUSEFLAG.load(Ordering::SeqCst);
+            if flag == 1 {
+                info!("Fuseflag is set to 1, exiting loop.");
+                break;
+        }
+        }
         
         Ok(buf.len())
     }
@@ -108,9 +108,9 @@ impl VfsNodeOps for FuseDev {
         fuseout.print();
         // initout.print();
 
-        // loop {
+        loop {
             
-        // }
+        }
         
         Ok(buf.len())
     }
@@ -121,4 +121,3 @@ impl VfsNodeOps for FuseDev {
  
     axfs_vfs::impl_vfs_non_dir_default! {}
 }
- 
