@@ -7,58 +7,59 @@
  *   See the Mulan PSL v2 for more details.
  */
 
+#![warn(dead_code)]
 
 #[derive(Debug, Clone, Copy)]
 pub enum FuseOpcode {
-    FUSE_LOOKUP		= 1,
-	FUSE_FORGET		= 2,  /* no reply */
-	FUSE_GETATTR	= 3,
-	FUSE_SETATTR	= 4,
-	FUSE_READLINK	= 5,
-	FUSE_SYMLINK	= 6,
-	FUSE_MKNOD		= 8,
-	FUSE_MKDIR		= 9,
-	FUSE_UNLINK		= 10,
-	FUSE_RMDIR		= 11,
-	FUSE_RENAME		= 12,
-	FUSE_LINK		= 13,
-	FUSE_OPEN		= 14,
-	FUSE_READ		= 15,
-	FUSE_WRITE		= 16,
-	FUSE_STATFS		= 17,
-	FUSE_RELEASE	= 18,
-	FUSE_FSYNC		= 20,
-	FUSE_SETXATTR		= 21,
-	FUSE_GETXATTR		= 22,
-	FUSE_LISTXATTR		= 23,
-	FUSE_REMOVEXATTR	= 24,
-	FUSE_FLUSH		    = 25,
-	FUSE_INIT		    = 26,
-	FUSE_OPENDIR		= 27,
-	FUSE_READDIR		= 28,
-	FUSE_RELEASEDIR		= 29,
-	FUSE_FSYNCDIR		= 30,
-	FUSE_GETLK		    = 31,
-	FUSE_SETLK		    = 32,
-	FUSE_SETLKW		    = 33,
-	FUSE_ACCESS		    = 34,
-	FUSE_CREATE		    = 35,
-	FUSE_INTERRUPT	    = 36,
-	FUSE_BMAP		    = 37,
-	FUSE_DESTROY	    = 38,
-	FUSE_IOCTL		    = 39,
-	FUSE_POLL		    = 40,
-	FUSE_NOTIFY_REPLY	= 41,
-	FUSE_BATCH_FORGET	= 42,
-	FUSE_FALLOCATE		= 43,
-	FUSE_READDIRPLUS	= 44,
-	FUSE_RENAME2		= 45,
-	FUSE_LSEEK		    = 46,
-	FUSE_COPY_FILE_RANGE	= 47,
-	FUSE_SETUPMAPPING	= 48,
-	FUSE_REMOVEMAPPING	= 49,
-	FUSE_SYNCFS		    = 50,
-	FUSE_TMPFILE		= 51,
+	FuseLookup		= 1,
+	FuseForget		= 2,  /* no reply */
+	FuseGetattr		= 3,
+	FuseSetattr		= 4,
+	FuseReadlink	= 5,
+	FuseSymlink		= 6,
+	FuseMknod		= 8,
+	FuseMkdir		= 9,
+	FuseUnlink		= 10,
+	FuseRmdir		= 11,
+	FuseRename		= 12,
+	FuseLink		= 13,
+	FuseOpen		= 14,
+	FuseRead		= 15,
+	FuseWrite		= 16,
+	FuseStatfs		= 17,
+	FuseRelease		= 18,
+	FuseFsync		= 20,
+	FuseSetxattr		= 21,
+	FuseGetxattr		= 22,
+	FuseListxattr		= 23,
+	FuseRemovexattr		= 24,
+	FuseFlush		    = 25,
+	FuseInit		    = 26,
+	FuseOpendir			= 27,
+	FuseReaddir			= 28,
+	FuseReleasedir		= 29,
+	FuseFsyncdir		= 30,
+	FuseGetlk		    = 31,
+	FuseSetlk		    = 32,
+	FuseSetlkw		    = 33,
+	FuseAccess		    = 34,
+	FuseCreate		    = 35,
+	FuseInterrupt	    = 36,
+	FuseBmap		    = 37,
+	FuseDestroy	    	= 38,
+	FuseIoctl		    = 39,
+	FusePoll		    = 40,
+	FuseNotifyReply		= 41,
+	FuseBatchForget		= 42,
+	FuseFallocate		= 43,
+	FuseReaddirplus		= 44,
+	FuseRename2			= 45,
+	FuseLseek		    = 46,
+	FuseCopyFileRange	= 47,
+	FuseSetupmapping	= 48,
+	FuseRemovemapping	= 49,
+	FuseSyncfs		    = 50,
+	FuseTmpfile			= 51,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -239,6 +240,63 @@ impl FuseInitOut {
 	pub fn print(&self) {
 		info!("FuseInitOut: major: {:?}, minor: {:?}, max_readahead: {:?}, flags: {:?}, max_background: {:?}, congestion_threshold: {:?}, max_write: {:?}, time_gran: {:?}, max_pages: {:?}, map_alignment: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.max_background, self.congestion_threshold, self.max_write, self.time_gran, self.max_pages, self.map_alignment, self.flags2, self.unused);
 	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseGetattrIn {
+	getattr_flags: u32,
+	dummy: u32,
+	fh: u64,
+}
+
+impl FuseGetattrIn {
+	pub fn new(getattr_flags: u32, dummy: u32, fh: u64) -> Self {
+		Self {
+			getattr_flags,
+			dummy,
+			fh,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseGetattrIn: getattr_flags: {:?}, dummy: {:?}, fh: {:?}", self.getattr_flags, self.dummy, self.fh);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.getattr_flags.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.dummy.to_le_bytes());
+		buf[8..16].copy_from_slice(&self.fh.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseAttr {
+	ino: u64,
+	size: u64,
+	blocks: u64,
+	atime: u64,
+	mtime: u64,
+	ctime: u64,
+	crtime: u64,
+	atimensec: u32,
+	mtimensec: u32,
+	ctimensec: u32,
+	crtimensec: u32,
+	mode: u32,
+	nlink: u32,
+	uid: u32,
+	gid: u32,
+	rdev: u32,
+	blksize: u32,
+	padding: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseAttrOut {
+	attr_valid: u64,
+	attr_valid_nsec: u32,
+	dummy: u32,
+	attr: FuseAttr,
 }
 
 #[derive(Debug, Clone, Copy)]

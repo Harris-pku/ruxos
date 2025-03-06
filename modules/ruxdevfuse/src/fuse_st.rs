@@ -7,7 +7,9 @@
  *   See the Mulan PSL v2 for more details.
  */
 
-#![allow(dead_code)]
+#![warn(dead_code)]
+
+use log::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FuseOpcode {

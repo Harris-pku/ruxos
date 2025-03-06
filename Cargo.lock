@@ -1575,6 +1575,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruxdevfuse"
+version = "0.1.0"
+dependencies = [
+ "axalloc",
+ "axfs_devfs",
+ "axfs_ramfs",
+ "axfs_vfs",
+ "capability",
+ "cfg-if",
+ "crate_interface",
+ "driver_block",
+ "lazy_init",
+ "log",
+ "memory_addr",
+ "ruxdriver",
+ "ruxfs",
+ "ruxtask",
+ "spin 0.9.8",
+ "spinlock",
+]
+
+[[package]]
 name = "ruxdisplay"
 version = "0.1.0"
 dependencies = [
@@ -1624,6 +1646,7 @@ dependencies = [
  "axlog",
  "axsync",
  "rux9p",
+ "ruxdevfuse",
  "ruxdisplay",
  "ruxdriver",
  "ruxfs",
@@ -1663,9 +1686,20 @@ dependencies = [
 name = "ruxfuse"
 version = "0.1.0"
 dependencies = [
+ "axalloc",
+ "axfs_devfs",
+ "axfs_ramfs",
  "axfs_vfs",
+ "capability",
+ "cfg-if",
+ "crate_interface",
+ "driver_block",
+ "lazy_init",
  "log",
+ "memory_addr",
+ "ruxdriver",
  "spin 0.9.8",
+ "spinlock",
 ]
 
 [[package]]
@@ -1823,9 +1857,11 @@ dependencies = [
  "memory_addr",
  "page_table",
  "ruxconfig",
+ "ruxdevfuse",
  "ruxfdtable",
  "ruxfeat",
  "ruxfs",
+ "ruxfuse",
  "ruxfutex",
  "ruxhal",
  "ruxmm",

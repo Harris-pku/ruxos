@@ -7,22 +7,23 @@
  *   See the Mulan PSL v2 for more details.
  */
 
+// #![cfg(feature = "multitask")]
+
 use alloc::collections::BTreeMap;
 use alloc::sync::{Arc, Weak};
 use spinlock::SpinNoIrq;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicI32, Ordering};
 use alloc::vec::Vec;
+use log::*;
 
 use axfs_vfs::{VfsDirEntry, VfsError, VfsResult};
 use axfs_vfs::{VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType, VfsOps};
 use spin::{once::Once, RwLock};
-use crate::api::current_dir;
-use crate::fuse;
-use crate::fuse_st::{FuseInHeader, FuseInitIn, FuseOpcode};
+use ruxfs::fuse_st::{FuseInHeader, FuseInitIn, FuseOpcode};
+use ruxfs::devfuse::{FUSEFLAG, FUSE_VEC};
 
-use crate::fusedev::{FUSEFLAG, FUSE_VEC};
-
-pub static mut unique_id: u64 = 0;
+pub static mut UNIQUE_ID: u64 = 0;
+pub static INITFLAG: AtomicI32 = AtomicI32::new(1);
 
 /// It implements [`axfs_vfs::VfsOps`].
 pub struct FuseFS {
@@ -98,12 +99,54 @@ impl FuseNode {
 
     pub(super) fn set_parent(&self, parent: Option<&VfsNodeRef>) {
         info!("fuse_node set_parent...");
+        // self.init();
         *self.parent.write() = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
     }
 
     /// Create a subdirectory at this directory.
     pub fn mkdir(self: &Arc<Self>, name: &'static str) -> Arc<Self> {
-        info!("fuse_node mkdir...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node MKDIR here...");
+
+        unsafe {
+            // FuseMkdir = 9
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(104, FuseOpcode::FuseMkdir as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 104];
+            fusein.write_to(&mut fusebuf);
+            let initin = FuseInitIn::new(10, 229, 0, 0, 0, [0; 11]);
+            initin.write_to(&mut fusebuf[40..]);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at mkdir in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseMkdir as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at mkdir is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to mkdir: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
+        }
+
+        info!("fuse_node mkdir finish successfully...");
+
         let parent = self.clone() as VfsNodeRef;
         let node = Self::new(Some(&parent));
         self.children.write().insert(name, node.clone());
@@ -117,87 +160,179 @@ impl FuseNode {
     }
 
     pub fn init(&self) {
-        info!("fuse_node init...");
-        // FuseInit = 26
-        // FUSEFLAG.store(FuseOpcode::FuseInit as i32, Ordering::Relaxed);
+        info!("\nNEW FUSE REQUEST:\n  fuse_node INIT here...");
+
+        unsafe {
+            // FuseInit = 26
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(104, FuseOpcode::FuseInit as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 104];
+            fusein.write_to(&mut fusebuf);
+            let initin = FuseInitIn::new(10, 229, 0, 0, 0, [0; 11]);
+            initin.write_to(&mut fusebuf[40..]);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at init in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseInit as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at init is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to init: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
+        }
+
+        info!("fuse_node init finish successfully...");
     }
 }
 
 impl VfsNodeOps for FuseNode {
     fn open(&self) -> VfsResult {
-        info!("fuse_node open here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node OPEN here...");
 
         unsafe {
             // FuseOpen = 14
-            FUSEFLAG.store(FuseOpcode::FuseOpen as i32, Ordering::Relaxed);
-            
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 14, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseOpen as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at open: {:?}", vec);
+                info!("Fusevec at open in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseOpen as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at open is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to open: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node open finish successfully...");
         
         Ok(())
     }
 
     fn release(&self) -> VfsResult {
-        info!("fuse_node release here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node RELEASE here...");
 
         unsafe {
-            // FuseRelease = 18
-            FUSEFLAG.store(FuseOpcode::FuseRelease as i32, Ordering::Relaxed);
-            
+            // FuseRelease = 1
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 18, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseRelease as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at release: {:?}", vec);
+                info!("Fusevec at release in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseRelease as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at release is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to release: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node release finish successfully...");
         
         Ok(())
     }
 
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
-        info!("fuse_node get_attr here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node GET_ATTR here...");
 
         unsafe {
             // FuseGetattr = 3
-            FUSEFLAG.store(FuseOpcode::FuseGetattr as i32, Ordering::Relaxed);
-            
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 3, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseGetattr as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at get_attr: {:?}", vec);
+                info!("Fusevec at get_attr in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseGetattr as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at get_attr is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to get_attr: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node get_attr finish successfully...");
         
         Ok(VfsNodeAttr::new_dir(4096, 0))
     }
@@ -206,7 +341,6 @@ impl VfsNodeOps for FuseNode {
     //     info!("fuse_node read_at here...");
     //     // FuseRead = 15
     //     FUSEFLAG.store(FuseOpcode::FuseRead as u32, Ordering::Relaxed);
-        
         // let guard = self.children.read();
         // let mut data = guard.iter();
         // let mut offset = offset as usize;
@@ -269,7 +403,6 @@ impl VfsNodeOps for FuseNode {
     //     info!("fuse_node write_at here...");
     //     // FuseWrite = 16
     //     FUSEFLAG.store(FuseOpcode::FuseWrite as u32, Ordering::Relaxed);
-        
     //     Ok(0)
     // }
 
@@ -277,7 +410,6 @@ impl VfsNodeOps for FuseNode {
     //     info!("fuse_node fsync here...");
     //     // FuseFsync = 20
     //     FUSEFLAG.store(FuseOpcode::FuseFsync as u32, Ordering::Relaxed);
-        
     //     Ok(())
     // }
 
@@ -287,46 +419,51 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn lookup(self: Arc<Self>, path: &str) -> VfsResult<VfsNodeRef> {
-        info!("fuse_node lookup here...");
+        let f1 = INITFLAG.load(Ordering::SeqCst);
+        if f1 == 1 {
+            INITFLAG.store(0, Ordering::Relaxed);
+            self.init();
+        }
+
+        info!("\nNEW FUSE REQUEST:\n  fuse_node LOOKUP here...");
 
         unsafe {
             // FuseLookup = 1
-            FUSEFLAG.store(FuseOpcode::FuseLookup as i32, Ordering::Relaxed);
-            
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 1, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseLookup as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                // vec.extend_from_slice(&[1, 2, 3, 4, 5, 7, 7, 7, 9, 1, 0]);
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at lookup: {:?}", vec);
+                info!("Fusevec at lookup in devfuse: {:?}", vec);
             }
 
-            // current_dir()
+            FUSEFLAG.store(FuseOpcode::FuseLookup as i32, Ordering::Relaxed);
 
             loop {
-                // info!("----");
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at lookup is set to {:?}, exiting loop.", flag);
+                    info!("Fuseflag at lookup is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
+                ruxtask::yield_now();
             }
 
-            FUSEFLAG.store(0, Ordering::Relaxed);
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 info!("Fusevec back to lookup: {:?}", vec);
                 vec.clear();
             }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node lookup finish successfully...");
 
 
         // let fusein = FuseInHeader::new(1052672, 1, 370, 2, 0, 0, 0, 0);
@@ -351,27 +488,45 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn create(&self, path: &str, ty: VfsNodeType) -> VfsResult {
-        info!("fuse_node create here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node CREATE here...");
 
         unsafe {
-            // FuseCreate = 8
-            FUSEFLAG.store(FuseOpcode::FuseCreate as i32, Ordering::Relaxed);
-            
+            // FuseCreate = 20
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 8, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseCreate as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at create: {:?}", vec);
+                info!("Fusevec at create in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseCreate as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at create is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to create: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node create finish successfully...");
         
 
         let (name, rest) = split_path(path);
@@ -394,28 +549,45 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn remove(&self, path: &str) -> VfsResult {
-        info!("fuse_node remove here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node REMOVE here...");
 
         unsafe {
-            // FuseUnlink = 10
-            FUSEFLAG.store(FuseOpcode::FuseUnlink as i32, Ordering::Relaxed);
-            
+            // FuseForget = 2
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 10, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseForget as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at remove: {:?}", vec);
+                info!("Fusevec at remove in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseForget as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at remove is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to remove: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
 
+        info!("fuse_node remove finish successfully...");
 
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
@@ -435,27 +607,45 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn read_dir(&self, start_idx: usize, dirents: &mut [VfsDirEntry]) -> VfsResult<usize> {
-        info!("fuse_node read_dir here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node READ_DIR here...");
 
         unsafe {
             // FuseReaddir = 28
-            FUSEFLAG.store(FuseOpcode::FuseReaddir as i32, Ordering::Relaxed);
-            
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 28, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseReaddir as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at read_dir: {:?}", vec);
+                info!("Fusevec at readdir in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseReaddir as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at readdir is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to readdir: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node readdir finish successfully...");
         
         let children = self.children.read();
         let mut children = children.iter().skip(start_idx.max(2) - 2);
@@ -476,27 +666,45 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn rename(&self, _src_path: &str, _dst_path: &str) -> VfsResult {
-        info!("fuse_node rename here...");
+        info!("\nNEW FUSE REQUEST:\n  fuse_node RENAME here...");
 
         unsafe {
-            // FuseRename = 12
-            FUSEFLAG.store(FuseOpcode::FuseRename as i32, Ordering::Relaxed);
-            
+            // FuseRename = 18
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 
-            unique_id += 1;
-            let fusein = FuseInHeader::new(40, 12, unique_id, 2, 0, 0, 0, 0);
+            UNIQUE_ID += 1;
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseRename as u32, UNIQUE_ID, 2, 0, 0, 0, 0);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at rename: {:?}", vec);
+                info!("Fusevec at rename in devfuse: {:?}", vec);
             }
+
+            FUSEFLAG.store(FuseOpcode::FuseRename as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at rename is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to rename: {:?}", vec);
+                vec.clear();
+            }
+            FUSEFLAG.store(0, Ordering::Relaxed);
         }
+
+        info!("fuse_node rename finish successfully...");
 
         Ok(())
     }

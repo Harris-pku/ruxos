@@ -80,9 +80,6 @@ impl RootDirectory {
         //     info!("mounts_vec: {:?}", mp.path);
         // }
         info!("mounts_vec last: {:?}", mounts.last().unwrap().path);
-        // *mounts_guard = mounts.to_vec();
-        // self.mounts_lock.lock().replace(mounts);
-        // self.mounts_lock.unlock(mounts);
         Ok(())
     }
 

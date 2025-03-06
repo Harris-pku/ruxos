@@ -9,14 +9,18 @@
 
 use alloc::collections::BTreeMap;
 use alloc::sync::{Arc, Weak};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use spinlock::SpinNoIrq;
+use core::sync::atomic::Ordering;
+use alloc::vec::Vec;
 
 use axfs_vfs::{VfsDirEntry, VfsError, VfsResult};
 use axfs_vfs::{VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType, VfsOps};
 use spin::{once::Once, RwLock};
-use crate::fuse_st::{FuseInHeader, FuseInitIn};
+use crate::fuse_st::{FuseInHeader, FuseInitIn, FuseOpcode};
 
-use crate::fusedev::FUSEFLAG;
+use crate::devfuse::{FUSEFLAG, FUSE_VEC};
+
+pub static mut unique_id: u64 = 0;
 
 /// It implements [`axfs_vfs::VfsOps`].
 pub struct FuseFS {
@@ -29,7 +33,6 @@ impl FuseFS {
     pub fn new() -> Self {
         info!("fusefs new...");
         // let parent: Weak<dyn VfsNodeOps> = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
-        let initin = FuseInitIn::new(1052672, 1, 370, 2, 0, [0; 11]);
         Self {
             parent: Once::new(),
             root: FuseNode::new(None),
@@ -113,21 +116,168 @@ impl FuseNode {
 
     pub fn init(&self) {
         info!("fuse_node init...");
-        FUSEFLAG.store(1, Ordering::Relaxed);
+        // FuseInit = 26
+        // FUSEFLAG.store(FuseOpcode::FuseInit as i32, Ordering::Relaxed);
     }
 }
 
 impl VfsNodeOps for FuseNode {
     fn open(&self) -> VfsResult {
         info!("fuse_node open here...");
+
+        unsafe {
+            // FuseOpen = 14
+            FUSEFLAG.store(FuseOpcode::FuseOpen as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 14, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at open: {:?}", vec);
+            }
+        }
+        
+        Ok(())
+    }
+
+    fn release(&self) -> VfsResult {
+        info!("fuse_node release here...");
+
+        unsafe {
+            // FuseRelease = 18
+            FUSEFLAG.store(FuseOpcode::FuseRelease as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 18, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at release: {:?}", vec);
+            }
+        }
         
         Ok(())
     }
 
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
         info!("fuse_node get_attr here...");
+
+        unsafe {
+            // FuseGetattr = 3
+            FUSEFLAG.store(FuseOpcode::FuseGetattr as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 3, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at get_attr: {:?}", vec);
+            }
+        }
+        
         Ok(VfsNodeAttr::new_dir(4096, 0))
     }
+
+    // fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
+    //     info!("fuse_node read_at here...");
+    //     // FuseRead = 15
+    //     FUSEFLAG.store(FuseOpcode::FuseRead as u32, Ordering::Relaxed);
+        
+        // let guard = self.children.read();
+        // let mut data = guard.iter();
+        // let mut offset = offset as usize;
+        // let mut len = buf.len();
+        // let mut i = 0;
+        // while let Some((_, node)) = data.next() {
+        //     let attr = node.get_attr().unwrap();
+        //     let name = node.get_attr().unwrap().file_type();
+        //     let size = attr.size();
+        //     let file_type = attr.file_type();
+        //     let perm = attr.perm();
+        //     let uid = 0; // attr.uid();
+        //     let gid = 0; // attr.gid();
+        //     let atime = 0; // attr.atime();
+        //     let mtime = 0; // attr.mtime();
+        //     let ctime = 0; // attr.ctime();
+        //     let nlink = 0; // attr.nlink();
+        //     let rdev = 0; // attr.rdev();
+        //     let blksize = 0; // attr.blksize();
+        //     let blocks = 0; // attr.blocks();
+        //     let flags = 0; // attr.flags();
+        //     let gen = 0; // attr.gen();
+        //     let birthtime = 0; // attr.birthtime();
+        //     let attr = 0; // VfsNodeAttr::new(name, file_type, size, perm, uid, gid, atime, mtime, ctime, nlink, rdev, blksize, blocks, flags, gen, birthtime);
+        //     let mut buf = [0; 1052672];
+        //     let fusein = FuseInHeader::new(1052672, 15, 370, 2, 0, 0, 0, 0);
+        //     fusein.write_to(&mut buf);
+        //     let initin = FuseInitIn::new(10, 229, 0, 0, 0, [0; 11]);
+        //     initin.write_to(&mut buf[40..]);
+        //     let mut flag = 0;
+        //     unsafe {
+        //         if FUSE_VEC.is_none() {
+        //             FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+        //         }
+        //     }
+        //     loop {
+        //         flag = FUSEFLAG.load(Ordering::SeqCst);
+        //         if flag != 0 {
+        //             break;
+        //         }
+        //     }
+        //     info!("Fuseflag is set to {:?}, exiting loop.", flag);
+        //     FUSEFLAG.store(0, Ordering::Relaxed);
+        //     unsafe {
+        //         if let Some(vec_arc) = FUSE_VEC.as_ref() {
+        //             let vec = vec_arc.lock();
+        //             let len = vec.len();
+        //             info!("Fusevec: {:?}", vec);
+        //         }
+        //     }
+        //     i += 1;
+        //     if i == len {
+        //         break;
+        //     }
+        // }
+    //     Ok(0)
+    // }
+
+    // fn write_at(&self, _offset: u64, _buf: &[u8]) -> VfsResult<usize> {
+    //     info!("fuse_node write_at here...");
+    //     // FuseWrite = 16
+    //     FUSEFLAG.store(FuseOpcode::FuseWrite as u32, Ordering::Relaxed);
+        
+    //     Ok(0)
+    // }
+
+    // fn fsync(&self) -> VfsResult {
+    //     info!("fuse_node fsync here...");
+    //     // FuseFsync = 20
+    //     FUSEFLAG.store(FuseOpcode::FuseFsync as u32, Ordering::Relaxed);
+        
+    //     Ok(())
+    // }
 
     fn parent(&self) -> Option<VfsNodeRef> {
         info!("fuse_node parent here...");
@@ -136,7 +286,47 @@ impl VfsNodeOps for FuseNode {
 
     fn lookup(self: Arc<Self>, path: &str) -> VfsResult<VfsNodeRef> {
         info!("fuse_node lookup here...");
-        // fuse_lookiup = 1
+
+        unsafe {
+            // FuseLookup = 1
+            FUSEFLAG.store(FuseOpcode::FuseLookup as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 1, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                // vec.extend_from_slice(&[1, 2, 3, 4, 5, 7, 7, 7, 9, 1, 0]);
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at lookup: {:?}", vec);
+            }
+
+            // current_dir()
+
+            loop {
+                // info!("----");
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    info!("Fuseflag at lookup is set to {:?}, exiting loop.", flag);
+                    break;
+                }
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                info!("Fusevec back to lookup: {:?}", vec);
+                vec.clear();
+            }
+        }
+
+
         // let fusein = FuseInHeader::new(1052672, 1, 370, 2, 0, 0, 0, 0);
         // fusein.write_to(&mut [0; 1052672]);
         let (name, rest) = split_path(path);
@@ -158,31 +348,30 @@ impl VfsNodeOps for FuseNode {
         }
     }
 
-    fn read_dir(&self, start_idx: usize, dirents: &mut [VfsDirEntry]) -> VfsResult<usize> {
-        info!("fuse_node read_dir here...");
-        // fuse_readdir = 28
-        // let fusein = fuse_in_header::new(1052672, 28, 370, 2, 0, 0, 0, 0);
-        // fusein.write_to(&mut [0; 1052672]);
-        let children = self.children.read();
-        let mut children = children.iter().skip(start_idx.max(2) - 2);
-        for (i, ent) in dirents.iter_mut().enumerate() {
-            match i + start_idx {
-                0 => *ent = VfsDirEntry::new(".", VfsNodeType::Dir),
-                1 => *ent = VfsDirEntry::new("..", VfsNodeType::Dir),
-                _ => {
-                    if let Some((name, node)) = children.next() {
-                        *ent = VfsDirEntry::new(name, node.get_attr().unwrap().file_type());
-                    } else {
-                        return Ok(i);
-                    }
-                }
-            }
-        }
-        Ok(dirents.len())
-    }
-
     fn create(&self, path: &str, ty: VfsNodeType) -> VfsResult {
         info!("fuse_node create here...");
+
+        unsafe {
+            // FuseCreate = 8
+            FUSEFLAG.store(FuseOpcode::FuseCreate as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 8, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at create: {:?}", vec);
+            }
+        }
+        
+
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
             match name {
@@ -204,6 +393,28 @@ impl VfsNodeOps for FuseNode {
 
     fn remove(&self, path: &str) -> VfsResult {
         info!("fuse_node remove here...");
+
+        unsafe {
+            // FuseUnlink = 10
+            FUSEFLAG.store(FuseOpcode::FuseUnlink as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 10, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at remove: {:?}", vec);
+            }
+        }
+
+
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
             match name {
@@ -221,6 +432,73 @@ impl VfsNodeOps for FuseNode {
         }
     }
 
+    fn read_dir(&self, start_idx: usize, dirents: &mut [VfsDirEntry]) -> VfsResult<usize> {
+        info!("fuse_node read_dir here...");
+
+        unsafe {
+            // FuseReaddir = 28
+            FUSEFLAG.store(FuseOpcode::FuseReaddir as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 28, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at read_dir: {:?}", vec);
+            }
+        }
+        
+        let children = self.children.read();
+        let mut children = children.iter().skip(start_idx.max(2) - 2);
+        for (i, ent) in dirents.iter_mut().enumerate() {
+            match i + start_idx {
+                0 => *ent = VfsDirEntry::new(".", VfsNodeType::Dir),
+                1 => *ent = VfsDirEntry::new("..", VfsNodeType::Dir),
+                _ => {
+                    if let Some((name, node)) = children.next() {
+                        *ent = VfsDirEntry::new(name, node.get_attr().unwrap().file_type());
+                    } else {
+                        return Ok(i);
+                    }
+                }
+            }
+        }
+        Ok(dirents.len())
+    }
+
+    fn rename(&self, _src_path: &str, _dst_path: &str) -> VfsResult {
+        info!("fuse_node rename here...");
+
+        unsafe {
+            // FuseRename = 12
+            FUSEFLAG.store(FuseOpcode::FuseRename as i32, Ordering::Relaxed);
+            
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            unique_id += 1;
+            let fusein = FuseInHeader::new(40, 12, unique_id, 2, 0, 0, 0, 0);
+            let mut fusebuf = [0; 40];
+            fusein.write_to(&mut fusebuf);
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                info!("Fusevec at rename: {:?}", vec);
+            }
+        }
+
+        Ok(())
+    }
+
     axfs_vfs::impl_vfs_dir_default! {}
 }
 
@@ -232,6 +510,6 @@ fn split_path(path: &str) -> (&str, Option<&str>) {
 }
 
 pub fn fusefs() -> Arc<FuseFS> {
-    info!("fusefs newfs here...");
+    debug!("fusefs newfs here...");
     Arc::new(FuseFS::new())
 }

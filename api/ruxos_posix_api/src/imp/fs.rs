@@ -618,8 +618,8 @@ pub fn sys_mount(
         let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
         // let mount_point = ruxfs::root::MountPoint::new(target1, ruxfs::fuse::fusefs());
         // let vfsops = mount_point.fs.clone();
-        let vfsops = ruxfs::fuse::fusefs();
-        // let vfsops = ruxfuse::fuse::fusefs();
+        // let vfsops = ruxfs::fuse::fusefs();
+        let vfsops = ruxdevfuse::fuse::fusefs();
         info!("mounting filesystem at {}", target);
         dir.mount(target, vfsops)?;
         Ok(0)
