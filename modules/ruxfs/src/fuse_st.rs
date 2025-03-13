@@ -62,8 +62,91 @@ pub enum FuseOpcode {
 	FuseTmpfile			= 51,
 }
 
+pub mod fuse_open_flags {
+    pub const FOPEN_DIRECT_IO: u32 = 1 << 0;
+    pub const FOPEN_KEEP_CACHE: u32 = 1 << 1;
+    pub const FOPEN_NONSEEKABLE: u32 = 1 << 2;
+    pub const FOPEN_CACHE_DIR: u32 = 1 << 3;
+    pub const FOPEN_STREAM: u32 = 1 << 4;
+    pub const FOPEN_NOFLUSH: u32 = 1 << 5;
+    pub const FOPEN_PARALLEL_DIRECT_WRITES: u32 = 1 << 6;
+}
+
+pub mod fuse_setattr_bitmasks {
+    // Bitmasks for fuse_setattr_in.valid
+    pub const FATTR_MODE: u32 = 1 << 0;
+    pub const FATTR_UID: u32 = 1 << 1;
+    pub const FATTR_GID: u32 = 1 << 2;
+    pub const FATTR_SIZE: u32 = 1 << 3;
+    pub const FATTR_ATIME: u32 = 1 << 4;
+    pub const FATTR_MTIME: u32 = 1 << 5;
+    pub const FATTR_FH: u32 = 1 << 6;
+    pub const FATTR_ATIME_NOW: u32 = 1 << 7;
+    pub const FATTR_MTIME_NOW: u32 = 1 << 8;
+    pub const FATTR_LOCKOWNER: u32 = 1 << 9;
+    pub const FATTR_CTIME: u32 = 1 << 10;
+    pub const FATTR_KILL_SUIDGID: u32 = 1 << 11;
+}
+
+pub mod fuse_init_flags {
+    pub const FUSE_ASYNC_READ: u32 = 1 << 0;
+    pub const FUSE_POSIX_LOCKS: u32 = 1 << 1;
+    pub const FUSE_FILE_OPS: u32 = 1 << 2;
+    pub const FUSE_ATOMIC_O_TRUNC: u32 = 1 << 3;
+    pub const FUSE_EXPORT_SUPPORT: u32 = 1 << 4;
+    pub const FUSE_BIG_WRITES: u32 = 1 << 5;
+    pub const FUSE_DONT_MASK: u32 = 1 << 6;
+    pub const FUSE_SPLICE_WRITE: u32 = 1 << 7;
+    pub const FUSE_SPLICE_MOVE: u32 = 1 << 8;
+    pub const FUSE_SPLICE_READ: u32 = 1 << 9;
+    pub const FUSE_FLOCK_LOCKS: u32 = 1 << 10;
+    pub const FUSE_HAS_IOCTL_DIR: u32 = 1 << 11;
+    pub const FUSE_AUTO_INVAL_DATA: u32 = 1 << 12;
+    pub const FUSE_DO_READDIRPLUS: u32 = 1 << 13;
+    pub const FUSE_READDIRPLUS_AUTO: u32 = 1 << 14;
+    pub const FUSE_ASYNC_DIO: u32 = 1 << 15;
+    pub const FUSE_WRITEBACK_CACHE: u32 = 1 << 16;
+    pub const FUSE_NO_OPEN_SUPPORT: u32 = 1 << 17;
+    pub const FUSE_PARALLEL_DIROPS: u32 = 1 << 18;
+    pub const FUSE_HANDLE_KILLPRIV: u32 = 1 << 19;
+    pub const FUSE_POSIX_ACL: u32 = 1 << 20;
+    pub const FUSE_ABORT_ERROR: u32 = 1 << 21;
+    pub const FUSE_MAX_PAGES: u32 = 1 << 22;
+    pub const FUSE_CACHE_SYMLINKS: u32 = 1 << 23;
+    pub const FUSE_NO_OPENDIR_SUPPORT: u32 = 1 << 24;
+    pub const FUSE_EXPLICIT_INVAL_DATA: u32 = 1 << 25;
+    pub const FUSE_MAP_ALIGNMENT: u32 = 1 << 26;
+    pub const FUSE_SUBMOUNTS: u32 = 1 << 27;
+    pub const FUSE_HANDLE_KILLPRIV_V2: u32 = 1 << 28;
+    pub const FUSE_SETXATTR_EXT: u32 = 1 << 29;
+    pub const FUSE_INIT_EXT: u32 = 1 << 30;
+    pub const FUSE_INIT_RESERVED: u32 = 1 << 31;
+    pub const FUSE_SECURITY_CTX: u64 = 1 << 32;
+    pub const FUSE_HAS_INODE_DAX: u64 = 1 << 33;
+    pub const FUSE_CREATE_SUPP_GROUP: u64 = 1 << 34;
+}
+
+pub mod release_flags {
+    pub const FUSE_RELEASE_FLUSH: u32 = 1 << 0;
+    pub const FUSE_RELEASE_FLOCK_UNLOCK: u32 = 1 << 1;
+}
+
+pub mod getattr_flags {
+    pub const FUSE_GETATTR_FH: u32 = 1 << 0;
+}
+
+pub mod write_flags {
+    pub const FUSE_WRITE_CACHE: u32 = 1 << 0;
+    pub const FUSE_WRITE_LOCKOWNER: u32 = 1 << 1;
+    pub const FUSE_WRITE_KILL_SUIDGID: u32 = 1 << 2;
+}
+
+pub mod read_flags {
+    pub const FUSE_READ_LOCKOWNER: u32 = 1 << 1;
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct FuseInHeader {
+pub struct FuseInHeader { // 40 bytes
     len: u32,     // length of the request = sizeof(fuse_in_header) = 32
     opcode: u32,  // eg. FUSE_GETATTR = 3
     unique: u64,  // unique request ID
@@ -100,11 +183,12 @@ impl FuseInHeader {
 		buf[24..28].copy_from_slice(&self.uid.to_le_bytes());
 		buf[28..32].copy_from_slice(&self.gid.to_le_bytes());
 		buf[32..36].copy_from_slice(&self.pid.to_le_bytes());
+		buf[36..40].copy_from_slice(&self.padding.to_le_bytes());
 	}
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseOutHeader {
+pub struct FuseOutHeader { // 16 bytes
     len: u32,     // length of the response
     error: i32,   // error code
     unique: u64,  // unique request ID
@@ -126,6 +210,15 @@ impl FuseOutHeader {
 			unique: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
 		}
 	}
+
+	pub fn is_ok(&self) -> bool {
+		self.error == 0
+	}
+
+	pub fn error(&self) -> i32 {
+		self.error
+	}
+
 	pub fn print(&self) {
 		info!("fuse_out_header: len: {:?}, error: {:?}, unique: {:?}", self.len, self.error, self.unique);
 	}
@@ -139,7 +232,7 @@ impl FuseOutHeader {
 
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseInitIn {
+pub struct FuseInitIn { // 64 bytes
 	major: u32,
 	minor: u32,
     max_readahead: u32,
@@ -178,7 +271,7 @@ impl FuseInitIn {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseInitOut {
+pub struct FuseInitOut { // 64 bytes
 	major: u32,
 	minor: u32,
 	max_readahead: u32,
@@ -212,7 +305,7 @@ impl FuseInitOut {
 	}
 
 	pub fn read_from(buf: &[u8]) -> Self {
-		info!("fuseinitout len: {:?}, buf: {:?}", buf.len(), buf);
+		debug!("fuseinitout from len: {:?}, buf: {:?}", buf.len(), buf);
 		Self {
 			major: u32::from_le_bytes(buf[0..4].try_into().unwrap()),
 			minor: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
@@ -238,12 +331,12 @@ impl FuseInitOut {
 	}
 
 	pub fn print(&self) {
-		info!("FuseInitOut: major: {:?}, minor: {:?}, max_readahead: {:?}, flags: {:?}, max_background: {:?}, congestion_threshold: {:?}, max_write: {:?}, time_gran: {:?}, max_pages: {:?}, map_alignment: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.max_background, self.congestion_threshold, self.max_write, self.time_gran, self.max_pages, self.map_alignment, self.flags2, self.unused);
+		info!("FuseInitOut: major: {:?}, minor: {:?}, max_readahead: {:x}, flags: {:x}, max_background: {:?}, congestion_threshold: {:?}, max_write: {:?}, time_gran: {:?}, max_pages: {:?}, map_alignment: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.max_background, self.congestion_threshold, self.max_write, self.time_gran, self.max_pages, self.map_alignment, self.flags2, self.unused);
 	}
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseGetattrIn {
+pub struct FuseGetattrIn { // 16 bytes
 	getattr_flags: u32,
 	dummy: u32,
 	fh: u64,
@@ -270,37 +363,323 @@ impl FuseGetattrIn {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseAttr {
+pub struct FuseAttr { // 88 bytes
 	ino: u64,
 	size: u64,
 	blocks: u64,
 	atime: u64,
 	mtime: u64,
 	ctime: u64,
-	crtime: u64,
 	atimensec: u32,
 	mtimensec: u32,
 	ctimensec: u32,
-	crtimensec: u32,
 	mode: u32,
 	nlink: u32,
 	uid: u32,
 	gid: u32,
 	rdev: u32,
 	blksize: u32,
-	padding: u32,
+	flags: u32,
+}
+
+impl FuseAttr {
+	pub fn new(ino: u64, size: u64, blocks: u64, atime: u64, mtime: u64, ctime: u64, atimensec: u32, mtimensec: u32, ctimensec: u32, mode: u32, nlink: u32, uid: u32, gid: u32, rdev: u32, blksize: u32, flags: u32) -> Self {
+		Self {
+			ino,
+			size,
+			blocks,
+			atime,
+			mtime,
+			ctime,
+			atimensec,
+			mtimensec,
+			ctimensec,
+			mode,
+			nlink,
+			uid,
+			gid,
+			rdev,
+			blksize,
+			flags,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			ino: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			size: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+			blocks: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
+			atime: u64::from_le_bytes(buf[24..32].try_into().unwrap()),
+			mtime: u64::from_le_bytes(buf[32..40].try_into().unwrap()),
+			ctime: u64::from_le_bytes(buf[40..48].try_into().unwrap()),
+			atimensec: u32::from_le_bytes(buf[48..52].try_into().unwrap()),
+			mtimensec: u32::from_le_bytes(buf[52..56].try_into().unwrap()),
+			ctimensec: u32::from_le_bytes(buf[56..60].try_into().unwrap()),
+			mode: u32::from_le_bytes(buf[60..64].try_into().unwrap()),
+			nlink: u32::from_le_bytes(buf[64..68].try_into().unwrap()),
+			uid: u32::from_le_bytes(buf[68..72].try_into().unwrap()),
+			gid: u32::from_le_bytes(buf[72..76].try_into().unwrap()),
+			rdev: u32::from_le_bytes(buf[76..80].try_into().unwrap()),
+			blksize: u32::from_le_bytes(buf[80..84].try_into().unwrap()),
+			flags: u32::from_le_bytes(buf[84..88].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:?}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:?}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.ino.to_le_bytes());
+		buf[8..16].copy_from_slice(&self.size.to_le_bytes());
+		buf[16..24].copy_from_slice(&self.blocks.to_le_bytes());
+		buf[24..32].copy_from_slice(&self.atime.to_le_bytes());
+		buf[32..40].copy_from_slice(&self.mtime.to_le_bytes());
+		buf[40..48].copy_from_slice(&self.ctime.to_le_bytes());
+		buf[48..52].copy_from_slice(&self.atimensec.to_le_bytes());
+		buf[52..56].copy_from_slice(&self.mtimensec.to_le_bytes());
+		buf[56..60].copy_from_slice(&self.ctimensec.to_le_bytes());
+		buf[60..64].copy_from_slice(&self.mode.to_le_bytes());
+		buf[64..68].copy_from_slice(&self.nlink.to_le_bytes());
+		buf[68..72].copy_from_slice(&self.uid.to_le_bytes());
+		buf[72..76].copy_from_slice(&self.gid.to_le_bytes());
+		buf[76..80].copy_from_slice(&self.rdev.to_le_bytes());
+		buf[80..84].copy_from_slice(&self.blksize.to_le_bytes());
+		buf[84..88].copy_from_slice(&self.flags.to_le_bytes());
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseAttrOut {
+pub struct FuseKstatfs { // 80 bytes
+	blocks: u64,
+	bfree: u64,
+	bavail: u64,
+	files: u64,
+	ffree: u64,
+	bsize: u32,
+	namelen: u32,
+	frsize: u32,
+	padding: u32,
+	spare: [u32; 6],
+}
+
+impl FuseKstatfs {
+	pub fn new(blocks: u64, bfree: u64, bavail: u64, files: u64, ffree: u64, bsize: u32, namelen: u32, frsize: u32, padding: u32, spare: [u32; 6]) -> Self {
+		Self {
+			blocks,
+			bfree,
+			bavail,
+			files,
+			ffree,
+			bsize,
+			namelen,
+			frsize,
+			padding,
+			spare,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			blocks: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			bfree: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+			bavail: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
+			files: u64::from_le_bytes(buf[24..32].try_into().unwrap()),
+			ffree: u64::from_le_bytes(buf[32..40].try_into().unwrap()),
+			bsize: u32::from_le_bytes(buf[40..44].try_into().unwrap()),
+			namelen: u32::from_le_bytes(buf[44..48].try_into().unwrap()),
+			frsize: u32::from_le_bytes(buf[48..52].try_into().unwrap()),
+			padding: u32::from_le_bytes(buf[52..56].try_into().unwrap()),
+			spare: [
+				u32::from_le_bytes(buf[56..60].try_into().unwrap()),
+				u32::from_le_bytes(buf[60..64].try_into().unwrap()),
+				u32::from_le_bytes(buf[64..68].try_into().unwrap()),
+				u32::from_le_bytes(buf[68..72].try_into().unwrap()),
+				u32::from_le_bytes(buf[72..76].try_into().unwrap()),
+				u32::from_le_bytes(buf[76..80].try_into().unwrap()),
+			],
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseKstatfs: blocks: {:?}, bfree: {:?}, bavail: {:?}, files: {:?}, ffree: {:?}, bsize: {:?}, namelen: {:?}, frsize: {:?}, padding: {:?}, spare: {:?}", self.blocks, self.bfree, self.bavail, self.files, self.ffree, self.bsize, self.namelen, self.frsize, self.padding, self.spare);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseFileLock { // 24 bytes
+	start: u64,
+	end: u64,
+	type_: u32,
+	pid: u32,
+}
+
+impl FuseFileLock {
+	pub fn new(start: u64, end: u64, type_: u32, pid: u32) -> Self {
+		Self {
+			start,
+			end,
+			type_,
+			pid,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			start: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			end: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+			type_: u32::from_le_bytes(buf[16..20].try_into().unwrap()),
+			pid: u32::from_le_bytes(buf[20..24].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseFileLock: start: {:?}, end: {:?}, type: {:?}, pid: {:?}", self.start, self.end, self.type_, self.pid);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseAttrOut { // 104 bytes
 	attr_valid: u64,
 	attr_valid_nsec: u32,
 	dummy: u32,
 	attr: FuseAttr,
 }
 
+impl FuseAttrOut {
+	pub fn new(attr_valid: u64, attr_valid_nsec: u32, dummy: u32, attr: FuseAttr) -> Self {
+		Self {
+			attr_valid,
+			attr_valid_nsec,
+			dummy,
+			attr,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			attr_valid: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			attr_valid_nsec: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
+			dummy: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
+			attr: FuseAttr::read_from(&buf[16..104]),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseAttrOut: attr_valid: {:?}, attr_valid_nsec: {:?}, dummy: {:?}, attr: {:?}", self.attr_valid, self.attr_valid_nsec, self.dummy, self.attr);
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct FuseOpenIn {
+pub struct FuseEntryOut { // 128 bytes
+	nodeid: u64,		/* Inode ID */
+	generation: u64,	/* Inode generation: nodeid:gen must
+					   be unique for the fs's lifetime */
+	entry_valid: u64,	/* Cache timeout for the name */
+	attr_valid: u64,	/* Cache timeout for the attributes */
+	entry_valid_nsec: u32,
+	attr_valid_nsec: u32,
+	attr: FuseAttr,
+}
+
+impl FuseEntryOut {
+	pub fn new(nodeid: u64, generation: u64, entry_valid: u64, attr_valid: u64, entry_valid_nsec: u32, attr_valid_nsec: u32, attr: FuseAttr) -> Self {
+		Self {
+			nodeid,
+			generation,
+			entry_valid,
+			attr_valid,
+			entry_valid_nsec,
+			attr_valid_nsec,
+			attr,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			nodeid: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			generation: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+			entry_valid: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
+			attr_valid: u64::from_le_bytes(buf[24..32].try_into().unwrap()),
+			entry_valid_nsec: u32::from_le_bytes(buf[32..36].try_into().unwrap()),
+			attr_valid_nsec: u32::from_le_bytes(buf[36..40].try_into().unwrap()),
+			attr: FuseAttr::read_from(&buf[40..128]),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseEntryOut: nodeid: {:?}, generation: {:?}, entry_valid: {:?}, attr_valid: {:?}, entry_valid_nsec: {:?}, attr_valid_nsec: {:?}, attr: {:?}", self.nodeid, self.generation, self.entry_valid, self.attr_valid, self.entry_valid_nsec, self.attr_valid_nsec, self.attr);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseSetattrIn { // 88 bytes
+	valid: u32,
+	padding: u32,
+	fh: u64,
+	size: u64,
+	lock_owner: u64,
+	atime: u64,
+	mtime: u64,
+	ctime: u64,
+	atimensec: u32,
+	mtimensec: u32,
+	ctimensec: u32,
+	mode: u32,
+	unused4: u32,
+	uid: u32,
+	gid: u32,
+	unused5: u32,
+}
+
+impl FuseSetattrIn {
+	pub fn new(valid: u32, padding: u32, fh: u64, size: u64, lock_owner: u64, atime: u64, mtime: u64, ctime: u64, atimensec: u32, mtimensec: u32, ctimensec: u32, mode: u32, unused4: u32, uid: u32, gid: u32, unused5: u32) -> Self {
+		Self {
+			valid,
+			padding,
+			fh,
+			size,
+			lock_owner,
+			atime,
+			mtime,
+			ctime,
+			atimensec,
+			mtimensec,
+			ctimensec,
+			mode,
+			unused4,
+			uid,
+			gid,
+			unused5,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseSetattrIn: valid: {:?}, padding: {:?}, fh: {:?}, size: {:?}, lock_owner: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:?}, unused4: {:?}, uid: {:?}, gid: {:?}, unused5: {:?}", self.valid, self.padding, self.fh, self.size, self.lock_owner, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.unused4, self.uid, self.gid, self.unused5);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.valid.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.padding.to_le_bytes());
+		buf[8..16].copy_from_slice(&self.fh.to_le_bytes());
+		buf[16..24].copy_from_slice(&self.size.to_le_bytes());
+		buf[24..32].copy_from_slice(&self.lock_owner.to_le_bytes());
+		buf[32..40].copy_from_slice(&self.atime.to_le_bytes());
+		buf[40..48].copy_from_slice(&self.mtime.to_le_bytes());
+		buf[48..56].copy_from_slice(&self.ctime.to_le_bytes());
+		buf[56..60].copy_from_slice(&self.atimensec.to_le_bytes());
+		buf[60..64].copy_from_slice(&self.mtimensec.to_le_bytes());
+		buf[64..68].copy_from_slice(&self.ctimensec.to_le_bytes());
+		buf[68..72].copy_from_slice(&self.mode.to_le_bytes());
+		buf[72..76].copy_from_slice(&self.unused4.to_le_bytes());
+		buf[76..80].copy_from_slice(&self.uid.to_le_bytes());
+		buf[80..84].copy_from_slice(&self.gid.to_le_bytes());
+		buf[84..88].copy_from_slice(&self.unused5.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseOpenIn { // 8 bytes
 	flags: u32,
 	open_flags: u32,	/* FUSE_OPEN_... */
 }
@@ -324,7 +703,7 @@ impl FuseOpenIn {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseOpenOut {
+pub struct FuseOpenOut { // 16 bytes
 	fh: u64,
 	open_flags: u32,
 	padding: u32,
@@ -353,7 +732,7 @@ impl FuseOpenOut {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseReadIn {
+pub struct FuseReadIn { // 40 bytes
 	fh: u64,
 	offset: u64,
 	size: u32,
@@ -391,7 +770,7 @@ impl FuseReadIn {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct FuseWriteIn {
+pub struct FuseWriteIn { // 40 bytes
 	fh: u64,
 	offset: u64,
 	size: u32,
@@ -429,7 +808,7 @@ impl FuseWriteIn {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FuseWriteOut {
+pub struct FuseWriteOut { // 8 bytes
 	size: u32,
 	padding: u32,
 }
@@ -455,5 +834,455 @@ impl FuseWriteOut {
 
 	pub fn write_to(&self, buf: &mut [u8]) {
 		buf[0..4].copy_from_slice(&self.size.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseCreateIn { // 16 bytes
+	flags: u32,
+	mode: u32,
+	umask: u32,
+	open_flags: u32,	/* FUSE_OPEN_... */
+}
+
+impl FuseCreateIn {
+	pub fn new(flags: u32, mode: u32, umask: u32, open_flags: u32) -> Self {
+		Self {
+			flags,
+			mode,
+			umask,
+			open_flags,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseCreateIn: flags: {:?}, mode: {:?}, umask: {:?}, open_flags: {:?}", self.flags, self.mode, self.umask, self.open_flags);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.flags.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.mode.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.umask.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.open_flags.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseReleaseIn { // 24 bytes
+	fh: u64,
+	flags: u32,
+	release_flags: u32,
+	lock_owner: u64,
+}
+
+impl FuseReleaseIn {
+	pub fn new(fh: u64, flags: u32, release_flags: u32, lock_owner: u64) -> Self {
+		Self {
+			fh,
+			flags,
+			release_flags,
+			lock_owner,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseReleaseIn: fh: {:?}, flags: {:?}, release_flags: {:?}, lock_owner: {:?}", self.fh, self.flags, self.release_flags, self.lock_owner);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.flags.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.release_flags.to_le_bytes());
+		buf[16..24].copy_from_slice(&self.lock_owner.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseFlushIn { // 24 bytes
+	fh: u64,
+	unused: u32,
+	padding: u32,
+	lock_owner: u64,
+}
+
+impl FuseFlushIn {
+	pub fn new(fh: u64, unused: u32, lock_owner: u64) -> Self {
+		Self {
+			fh,
+			unused,
+			padding: 0,
+			lock_owner,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseFlushIn: fh: {:?}, unused: {:?}, padding: {:?}, lock_owner: {:?}", self.fh, self.unused, self.padding, self.lock_owner);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.unused.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
+		buf[16..24].copy_from_slice(&self.lock_owner.to_le_bytes());
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseStatfsOut { // 80 bytes
+	st: FuseKstatfs,
+}
+
+impl FuseStatfsOut {
+	pub fn new(st: FuseKstatfs) -> Self {
+		Self {
+			st,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			st: FuseKstatfs::read_from(buf),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseStatfsOut: st: {:?}", self.st);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseForgetIn { // 8 bytes
+	nlookup: u64,
+}
+
+impl FuseForgetIn {
+	pub fn new(nlookup: u64) -> Self {
+		Self {
+			nlookup,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseForgetIn: nlookup: {:?}", self.nlookup);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.nlookup.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseForgetOne { // 16 bytes
+	nodeid: u64,
+	nlookup: u64,
+}
+
+impl FuseForgetOne {
+	pub fn new(nodeid: u64, nlookup: u64) -> Self {
+		Self {
+			nodeid,
+			nlookup,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			nodeid: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			nlookup: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseForgetOne: nodeid: {:?}, nlookup: {:?}", self.nodeid, self.nlookup);
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseBatchForgetIn { // 8 bytes
+	count: u32,
+	dummy: u32,
+}
+
+impl FuseBatchForgetIn {
+	pub fn new(count: u32) -> Self {
+		Self {
+			count,
+			dummy: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseBatchForgetIn: count: {:?}, dummy: {:?}", self.count, self.dummy);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.count.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.dummy.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseMknodIn { // 16 bytes
+	mode: u32,
+	rdev: u32,
+	umask: u32,
+	padding: u32,
+}
+
+impl FuseMknodIn {
+	pub fn new(mode: u32, rdev: u32, umask: u32) -> Self {
+		Self {
+			mode,
+			rdev,
+			umask,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseMknodIn: mode: {:?}, rdev: {:?}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.mode.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.rdev.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.umask.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseMkdirIn { // 8 bytes
+	mode: u32,
+	umask: u32,
+}
+
+impl FuseMkdirIn {
+	pub fn new(mode: u32, umask: u32) -> Self {
+		Self {
+			mode,
+			umask,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseMkdirIn: mode: {:?}, umask: {:?}", self.mode, self.umask);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.mode.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.umask.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseRenameIn { // 8 bytes
+	newdir: u64,
+}
+
+impl FuseRenameIn {
+	pub fn new(newdir: u64) -> Self {
+		Self {
+			newdir,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseRenameIn: newdir: {:?}", self.newdir);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.newdir.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseRename2In { // 16 bytes
+	newdir: u64,
+	flags: u32,
+	padding: u32,
+}
+
+impl FuseRename2In {
+	pub fn new(newdir: u64, flags: u32) -> Self {
+		Self {
+			newdir,
+			flags,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseRename2In: newdir: {:?}, flags: {:?}, padding: {:?}", self.newdir, self.flags, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.newdir.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.flags.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseLinkIn { // 8 bytes
+	oldnodeid: u64,
+}
+
+impl FuseLinkIn {
+	pub fn new(oldnodeid: u64) -> Self {
+		Self {
+			oldnodeid,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseLinkIn: oldnodeid: {:?}", self.oldnodeid);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.oldnodeid.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseSetxattrIn { // 16 bytes
+	size: u32,
+	flags: u32,
+	setxattr_flags: u32,
+	padding: u32,
+}
+
+impl FuseSetxattrIn {
+	pub fn new(size: u32, flags: u32, setxattr_flags: u32) -> Self {
+		Self {
+			size,
+			flags,
+			setxattr_flags,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseSetxattrIn: size: {:?}, flags: {:?}, setxattr_flags: {:?}, padding: {:?}", self.size, self.flags, self.setxattr_flags, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.size.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.flags.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.setxattr_flags.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseGetxattrIn { // 8 bytes
+	size: u32,
+	padding: u32,
+}
+
+impl FuseGetxattrIn {
+	pub fn new(size: u32) -> Self {
+		Self {
+			size,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseGetxattrIn: size: {:?}, padding: {:?}", self.size, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.size.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseGetxattrOut { // 8 bytes
+	size: u32,
+	padding: u32,
+}
+
+impl FuseGetxattrOut {
+	pub fn new(size: u32) -> Self {
+		Self {
+			size,
+			padding: 0,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			size: u32::from_le_bytes(buf[0..4].try_into().unwrap()),
+			padding: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseGetxattrOut: size: {:?}, padding: {:?}", self.size, self.padding);
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseAccessIn { // 8 bytes
+	mask: u32,
+	padding: u32,
+}
+
+impl FuseAccessIn {
+	pub fn new(mask: u32) -> Self {
+		Self {
+			mask,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseAccessIn: mask: {:?}, padding: {:?}", self.mask, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..4].copy_from_slice(&self.mask.to_le_bytes());
+		buf[4..8].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseFsyncIn { // 8 bytes
+	fh: u64,
+	fsync_flags: u32,
+	padding: u32,
+}
+
+impl FuseFsyncIn {
+	pub fn new(fh: u64, fsync_flags: u32) -> Self {
+		Self {
+			fh,
+			fsync_flags,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseFsyncIn: fh: {:?}, fsync_flags: {:?}, padding: {:?}", self.fh, self.fsync_flags, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.fsync_flags.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
 	}
 }

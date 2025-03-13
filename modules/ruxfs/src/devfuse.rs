@@ -18,8 +18,6 @@ use spinlock::SpinNoIrq;
 use alloc::vec::Vec;
 use alloc::vec;
 
-use crate::fuse_st::{FuseInHeader, FuseInitIn, FuseInitOut, FuseOutHeader};
-
 pub static FUSEFLAG: AtomicI32 = AtomicI32::new(0);
 pub static mut FUSE_VEC: Option<Arc<SpinNoIrq<Vec<u8>>>> = None;
 
@@ -65,14 +63,18 @@ impl VfsNodeOps for FuseDev {
         // initin.write_to(&mut buf[40..]);
         // fusein.print();
         // initin.print();
-        // buf.copy_from_slice([1,2 ,3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-        // ruxtask::task::yield_now();
 
         let mut flag;
 
         unsafe {
             if FUSE_VEC.is_none() {
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            flag = FUSEFLAG.load(Ordering::SeqCst);
+            if flag > 100 {
+                info!("flag in read__ is {:?}, should back to fuse_node.", flag);
+                FUSEFLAG.store(-flag, Ordering::Relaxed);
             }
 
             loop {
@@ -97,6 +99,11 @@ impl VfsNodeOps for FuseDev {
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
+        debug!("fuse_dev222 writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
+        // if buf.len() == 16 {
+        //     info!("fuse buf writes {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
+        // }
+
         let mut flag;
 
         unsafe {
@@ -114,16 +121,8 @@ impl VfsNodeOps for FuseDev {
                 info!("Fusevec _write_: {:?}", vec);
             }
 
-            FUSEFLAG.store(-flag, Ordering::Relaxed);
+            FUSEFLAG.store(flag+100, Ordering::Relaxed);
         }
-        // info!("fuse_dev222 writes buf len: {:?} at pos: {:?}", buf.len(), offset);
-        // if buf.len() == 16 {
-        //     info!("fuse buf writes {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
-        // }
-        // let fuseout = FuseOutHeader::read_from(buf);
-        // let initout = FuseInitOut::read_from(&buf[16..]);
-        // fuseout.print();
-        // initout.print();
 
         Ok(buf.len())
     }
