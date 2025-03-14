@@ -43,15 +43,6 @@ macro_rules! register_9p_driver {
     };
 }
 
-macro_rules! register_fuse_driver {
-    ($driver_type:ty, $device_type:ty) => {
-        /// The unified type of the NIC devices.
-        #[cfg(not(feature = "dyn"))]
-        pub type AxFuseDevice = $device_type;
-    };
-}
-
-
 macro_rules! for_each_drivers {
     (type $drv_type:ident, $code:block) => {{
         #[allow(unused_imports)]

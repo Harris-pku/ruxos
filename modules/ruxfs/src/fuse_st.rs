@@ -9,6 +9,11 @@
 
 #![allow(dead_code)]
 
+use alloc::string::String;
+use alloc::fmt::Debug;
+use alloc::fmt::Formatter;
+use alloc::fmt::Error;
+
 #[derive(Debug, Clone, Copy)]
 pub enum FuseOpcode {
 	FuseLookup		= 1,
@@ -254,7 +259,7 @@ impl FuseInitIn {
     }
 
 	pub fn print(&self) {
-		info!("FuseInitIn: major: {:?}, minor: {:?}, max_readahead: {:?}, flags: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.flags2, self.unused);
+		info!("FuseInitIn: major: {:?}, minor: {:?}, max_readahead: {:#x}, flags: {:#x}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.flags2, self.unused);
 	}
 
     pub fn write_to(&self, buf: &mut [u8]) {
@@ -331,7 +336,7 @@ impl FuseInitOut {
 	}
 
 	pub fn print(&self) {
-		info!("FuseInitOut: major: {:?}, minor: {:?}, max_readahead: {:x}, flags: {:x}, max_background: {:?}, congestion_threshold: {:?}, max_write: {:?}, time_gran: {:?}, max_pages: {:?}, map_alignment: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.max_background, self.congestion_threshold, self.max_write, self.time_gran, self.max_pages, self.map_alignment, self.flags2, self.unused);
+		info!("FuseInitOut: major: {:?}, minor: {:?}, max_readahead: {:#x}, flags: {:#x}, max_background: {:?}, congestion_threshold: {:?}, max_write: {:#x}, time_gran: {:?}, max_pages: {:?}, map_alignment: {:?}, flags2: {:?}, unused: {:?}", self.major, self.minor, self.max_readahead, self.flags, self.max_background, self.congestion_threshold, self.max_write, self.time_gran, self.max_pages, self.map_alignment, self.flags2, self.unused);
 	}
 }
 
@@ -352,7 +357,7 @@ impl FuseGetattrIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseGetattrIn: getattr_flags: {:?}, dummy: {:?}, fh: {:?}", self.getattr_flags, self.dummy, self.fh);
+		info!("FuseGetattrIn: getattr_flags: {:#x}, dummy: {:?}, fh: {:#x}", self.getattr_flags, self.dummy, self.fh);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -362,7 +367,7 @@ impl FuseGetattrIn {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct FuseAttr { // 88 bytes
 	ino: u64,
 	size: u64,
@@ -426,7 +431,7 @@ impl FuseAttr {
 	}
 
 	pub fn print(&self) {
-		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:?}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:?}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
+		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:#x}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -446,6 +451,35 @@ impl FuseAttr {
 		buf[76..80].copy_from_slice(&self.rdev.to_le_bytes());
 		buf[80..84].copy_from_slice(&self.blksize.to_le_bytes());
 		buf[84..88].copy_from_slice(&self.flags.to_le_bytes());
+	}
+}
+
+impl Debug for FuseAttr {
+	fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+		write!(f, "FuseAttr: {{ ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:#x} }}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags)
+	}
+}
+
+impl Default for FuseAttr {
+	fn default() -> Self {
+		Self {
+			ino: 0,
+			size: 0,
+			blocks: 0,
+			atime: 0,
+			mtime: 0,
+			ctime: 0,
+			atimensec: 0,
+			mtimensec: 0,
+			ctimensec: 0,
+			mode: 0,
+			nlink: 0,
+			uid: 0,
+			gid: 0,
+			rdev: 0,
+			blksize: 0,
+			flags: 0,
+		}
 	}
 }
 
@@ -565,6 +599,14 @@ impl FuseAttrOut {
 		}
 	}
 
+	pub fn get_attr(&self) -> FuseAttr {
+		self.attr
+	}
+
+	pub fn get_size(&self) -> u64 {
+		self.attr.size
+	}
+
 	pub fn print(&self) {
 		info!("FuseAttrOut: attr_valid: {:?}, attr_valid_nsec: {:?}, dummy: {:?}, attr: {:?}", self.attr_valid, self.attr_valid_nsec, self.dummy, self.attr);
 	}
@@ -607,8 +649,34 @@ impl FuseEntryOut {
 		}
 	}
 
+	pub fn get_nodeid(&self) -> u64 {
+		self.nodeid
+	}
+
+	pub fn get_attr(&self) -> FuseAttr {
+		self.attr
+	}
+
+	pub fn get_size(&self) -> u64 {
+		self.attr.size
+	}
+
 	pub fn print(&self) {
 		info!("FuseEntryOut: nodeid: {:?}, generation: {:?}, entry_valid: {:?}, attr_valid: {:?}, entry_valid_nsec: {:?}, attr_valid_nsec: {:?}, attr: {:?}", self.nodeid, self.generation, self.entry_valid, self.attr_valid, self.entry_valid_nsec, self.attr_valid_nsec, self.attr);
+	}
+}
+
+impl Default for FuseEntryOut {
+	fn default() -> Self {
+		Self {
+			nodeid: 0,
+			generation: 0,
+			entry_valid: 0,
+			attr_valid: 0,
+			entry_valid_nsec: 0,
+			attr_valid_nsec: 0,
+			attr: FuseAttr::default(),
+		}
 	}
 }
 
@@ -655,7 +723,7 @@ impl FuseSetattrIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseSetattrIn: valid: {:?}, padding: {:?}, fh: {:?}, size: {:?}, lock_owner: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:?}, unused4: {:?}, uid: {:?}, gid: {:?}, unused5: {:?}", self.valid, self.padding, self.fh, self.size, self.lock_owner, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.unused4, self.uid, self.gid, self.unused5);
+		info!("FuseSetattrIn: valid: {:?}, padding: {:?}, fh: {:#x}, size: {:?}, lock_owner: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, unused4: {:?}, uid: {:?}, gid: {:?}, unused5: {:?}", self.valid, self.padding, self.fh, self.size, self.lock_owner, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.unused4, self.uid, self.gid, self.unused5);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -693,7 +761,7 @@ impl FuseOpenIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseOpenIn: flags: {:?}, open_flags: {:?}", self.flags, self.open_flags);
+		info!("FuseOpenIn: flags: {:#x}, open_flags: {:#x}", self.flags, self.open_flags);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -726,8 +794,22 @@ impl FuseOpenOut {
 		}
 	}
 
+	pub fn get_fh(&self) -> u64 {
+		self.fh
+	}
+
 	pub fn print(&self) {
-		info!("FuseOpenOut: fh: {:?}, open_flags: {:?}, padding: {:?}", self.fh, self.open_flags, self.padding);
+		info!("FuseOpenOut: fh: {:#x}, open_flags: {:#x}, padding: {:?}", self.fh, self.open_flags, self.padding);
+	}
+}
+
+impl Default for FuseOpenOut {
+	fn default() -> Self {
+		Self {
+			fh: 0,
+			open_flags: 0,
+			padding: 0,
+		}
 	}
 }
 
@@ -756,7 +838,7 @@ impl FuseReadIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseReadIn: fh: {:?}, offset: {:?}, size: {:?}, read_flags: {:?}, lock_owner: {:?}, flags: {:?}, padding: {:?}", self.fh, self.offset, self.size, self.read_flags, self.lock_owner, self.flags, self.padding);
+		info!("FuseReadIn: fh: {:#x}, offset: {:?}, size: {:?}, read_flags: {:#x}, lock_owner: {:?}, flags: {:#x}, padding: {:?}", self.fh, self.offset, self.size, self.read_flags, self.lock_owner, self.flags, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -794,7 +876,7 @@ impl FuseWriteIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseWriteIn: fh: {:?}, offset: {:?}, size: {:?}, write_flags: {:?}, lock_owner: {:?}, flags: {:?}, padding: {:?}", self.fh, self.offset, self.size, self.write_flags, self.lock_owner, self.flags, self.padding);
+		info!("FuseWriteIn: fh: {:#x}, offset: {:?}, size: {:?}, write_flags: {:#x}, lock_owner: {:?}, flags: {:#x}, padding: {:?}", self.fh, self.offset, self.size, self.write_flags, self.lock_owner, self.flags, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -856,7 +938,7 @@ impl FuseCreateIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseCreateIn: flags: {:?}, mode: {:?}, umask: {:?}, open_flags: {:?}", self.flags, self.mode, self.umask, self.open_flags);
+		info!("FuseCreateIn: flags: {:#x}, mode: {:#x}, umask: {:?}, open_flags: {:#x}", self.flags, self.mode, self.umask, self.open_flags);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -886,7 +968,7 @@ impl FuseReleaseIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseReleaseIn: fh: {:?}, flags: {:?}, release_flags: {:?}, lock_owner: {:?}", self.fh, self.flags, self.release_flags, self.lock_owner);
+		info!("FuseReleaseIn: fh: {:#x}, flags: {:#x}, release_flags: {:#x}, lock_owner: {:?}", self.fh, self.flags, self.release_flags, self.lock_owner);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -906,17 +988,17 @@ pub struct FuseFlushIn { // 24 bytes
 }
 
 impl FuseFlushIn {
-	pub fn new(fh: u64, unused: u32, lock_owner: u64) -> Self {
+	pub fn new(fh: u64, unused: u32, padding: u32, lock_owner: u64) -> Self {
 		Self {
 			fh,
 			unused,
-			padding: 0,
+			padding,
 			lock_owner,
 		}
 	}
 
 	pub fn print(&self) {
-		info!("FuseFlushIn: fh: {:?}, unused: {:?}, padding: {:?}, lock_owner: {:?}", self.fh, self.unused, self.padding, self.lock_owner);
+		info!("FuseFlushIn: fh: {:#x}, unused: {:?}, padding: {:?}, lock_owner: {:?}", self.fh, self.unused, self.padding, self.lock_owner);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1043,7 +1125,7 @@ impl FuseMknodIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseMknodIn: mode: {:?}, rdev: {:?}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
+		info!("FuseMknodIn: mode: {:#x}, rdev: {:?}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1070,7 +1152,7 @@ impl FuseMkdirIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseMkdirIn: mode: {:?}, umask: {:?}", self.mode, self.umask);
+		info!("FuseMkdirIn: mode: {:#x}, umask: {:?}", self.mode, self.umask);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1119,7 +1201,7 @@ impl FuseRename2In {
 	}
 
 	pub fn print(&self) {
-		info!("FuseRename2In: newdir: {:?}, flags: {:?}, padding: {:?}", self.newdir, self.flags, self.padding);
+		info!("FuseRename2In: newdir: {:?}, flags: {:#x}, padding: {:?}", self.newdir, self.flags, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1171,7 +1253,7 @@ impl FuseSetxattrIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseSetxattrIn: size: {:?}, flags: {:?}, setxattr_flags: {:?}, padding: {:?}", self.size, self.flags, self.setxattr_flags, self.padding);
+		info!("FuseSetxattrIn: size: {:?}, flags: {:#x}, setxattr_flags: {:#x}, padding: {:?}", self.size, self.flags, self.setxattr_flags, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1277,7 +1359,7 @@ impl FuseFsyncIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseFsyncIn: fh: {:?}, fsync_flags: {:?}, padding: {:?}", self.fh, self.fsync_flags, self.padding);
+		info!("FuseFsyncIn: fh: {:#x}, fsync_flags: {:#x}, padding: {:?}", self.fh, self.fsync_flags, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -1285,4 +1367,316 @@ impl FuseFsyncIn {
 		buf[8..12].copy_from_slice(&self.fsync_flags.to_le_bytes());
 		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
 	}
+}
+
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseBmapIn { // 16 bytes
+	block: u64,
+	blocksize: u32,
+	padding: u32,
+}
+
+impl FuseBmapIn {
+	pub fn new(block: u64, blocksize: u32) -> Self {
+		Self {
+			block,
+			blocksize,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseBmapIn: block: {:?}, blocksize: {:?}, padding: {:?}", self.block, self.blocksize, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.block.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.blocksize.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseBmapOut { // 8 bytes
+	block: u64,
+}
+
+impl FuseBmapOut {
+	pub fn new(block: u64) -> Self {
+		Self {
+			block,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			block: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseBmapOut: block: {:?}", self.block);
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseIoctlIn { // 32 bytes
+	fh: u64,
+	flags: u32,
+	cmd: u32,
+	arg: u64,
+	in_size: u32,
+	out_size: u32,
+}
+
+impl FuseIoctlIn {
+	pub fn new(fh: u64, flags: u32, cmd: u32, arg: u64, in_size: u32, out_size: u32) -> Self {
+		Self {
+			fh,
+			flags,
+			cmd,
+			arg,
+			in_size,
+			out_size,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseIoctlIn: fh: {:#x}, flags: {:#x}, cmd: {:?}, arg: {:?}, in_size: {:?}, out_size: {:?}", self.fh, self.flags, self.cmd, self.arg, self.in_size, self.out_size);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..12].copy_from_slice(&self.flags.to_le_bytes());
+		buf[12..16].copy_from_slice(&self.cmd.to_le_bytes());
+		buf[16..24].copy_from_slice(&self.arg.to_le_bytes());
+		buf[24..28].copy_from_slice(&self.in_size.to_le_bytes());
+		buf[28..32].copy_from_slice(&self.out_size.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseIoctlIovec { // 16 bytes
+	base: u64,
+	len: u64,
+}
+
+impl FuseIoctlIovec {
+	pub fn new(base: u64, len: u64) -> Self {
+		Self {
+			base,
+			len,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			base: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+			len: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseIoctlIovec: base: {:?}, len: {:?}", self.base, self.len);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseIoctlOut { // 16 bytes
+	result: i32,
+	flags: u32,
+	in_iovs: u32,
+	out_iovs: u32,
+}
+
+impl FuseIoctlOut {
+	pub fn new(result: i32, flags: u32, in_iovs: u32, out_iovs: u32) -> Self {
+		Self {
+			result,
+			flags,
+			in_iovs,
+			out_iovs,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			result: i32::from_le_bytes(buf[0..4].try_into().unwrap()),
+			flags: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+			in_iovs: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
+			out_iovs: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseIoctlOut: result: {:?}, flags: {:#x}, in_iovs: {:?}, out_iovs: {:?}", self.result, self.flags, self.in_iovs, self.out_iovs);
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FusePollIn { // 24 bytes
+	fh: u64,
+	kh: u64,
+	flags: u32,
+	events: u32,
+}
+
+impl FusePollIn {
+	pub fn new(fh: u64, kh: u64, flags: u32, events: u32) -> Self {
+		Self {
+			fh,
+			kh,
+			flags,
+			events,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FusePollIn: fh: {:#x}, kh: {:?}, flags: {:#x}, events: {:?}", self.fh, self.kh, self.flags, self.events);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..16].copy_from_slice(&self.kh.to_le_bytes());
+		buf[16..20].copy_from_slice(&self.flags.to_le_bytes());
+		buf[20..24].copy_from_slice(&self.events.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FusePollOut { // 8 bytes
+	revents: u32,
+	padding: u32,
+}
+
+impl FusePollOut {
+	pub fn new(revents: u32) -> Self {
+		Self {
+			revents,
+			padding: 0,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			revents: u32::from_le_bytes(buf[0..4].try_into().unwrap()),
+			padding: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FusePollOut: revents: {:?}, padding: {:?}", self.revents, self.padding);
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseLseekIn { // 24 bytes
+	fh: u64,	
+	offset: u64,
+	whence: u32,
+	padding: u32,
+}
+
+impl FuseLseekIn {
+	pub fn new(fh: u64, offset: u64, whence: u32) -> Self {
+		Self {
+			fh,
+			offset,
+			whence,
+			padding: 0,
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseLseekIn: fh: {:#x}, offset: {:?}, whence: {:?}, padding: {:?}", self.fh, self.offset, self.whence, self.padding);
+	}
+
+	pub fn write_to(&self, buf: &mut [u8]) {
+		buf[0..8].copy_from_slice(&self.fh.to_le_bytes());
+		buf[8..16].copy_from_slice(&self.offset.to_le_bytes());
+		buf[16..20].copy_from_slice(&self.whence.to_le_bytes());
+		buf[20..24].copy_from_slice(&self.padding.to_le_bytes());
+	}
+	
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FuseLseekOut { // 8 bytes
+	offset: u64,
+}
+
+impl FuseLseekOut {
+	pub fn new(offset: u64) -> Self {
+		Self {
+			offset,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		Self {
+			offset: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+		}
+	}
+
+	pub fn print(&self) {
+		info!("FuseLseekOut: offset: {:?}", self.offset);
+	}
+	
+}
+
+#[derive(Debug)]
+pub struct FuseDirent { // 24 bytes + len
+	ino: u64,
+	off: u64,
+	namelen: u32,
+	type_: u32,
+	name: String,
+}
+
+impl FuseDirent {
+	pub fn new(ino: u64, off: u64, namelen: u32, type_: u32, name: String) -> Self {
+		Self {
+			ino,
+			off,
+			namelen,
+			type_,
+			name,
+		}
+	}
+
+	pub fn read_from(buf: &[u8]) -> Self {
+		let ino = u64::from_le_bytes(buf[0..8].try_into().unwrap());
+		let off = u64::from_le_bytes(buf[8..16].try_into().unwrap());
+		let namelen = u32::from_le_bytes(buf[16..20].try_into().unwrap());
+		let type_ = u32::from_le_bytes(buf[20..24].try_into().unwrap());
+		let name = String::from_utf8(buf[24..24 + namelen as usize].to_vec()).unwrap();
+		Self {
+			ino,
+			off,
+			namelen,
+			type_,
+			name,
+		}
+	}
+
+	pub fn get_name(&self) -> String {
+		self.name.clone()
+	}
+
+	pub fn get_len(&self) -> usize {
+		let padding = (8 - (self.namelen % 8)) % 8;
+		info!("FuseDirent: padding: {:?}, len: {:?}", padding, (self.namelen + padding) as usize);
+        24 + (self.namelen + padding) as usize
+	}
+
+	pub fn print(&self) {
+		info!("FuseDirent: ino: {:?}, off: {:?}, namelen: {:?}, type: {:?}, name: {:?}", self.ino, self.off, self.namelen, self.type_, self.name);
+	}
+	
 }

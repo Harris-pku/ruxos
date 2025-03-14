@@ -40,7 +40,6 @@ impl super::AxDeviceEnum {
     pub const fn from_9p(dev: Ax9pDevice) -> Self {
         Self::_9P(dev)
     }
-
 }
 
 /// A structure that contains all device drivers of a certain category.

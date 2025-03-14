@@ -57,14 +57,9 @@ impl VfsNodeOps for FuseDev {
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
         info!("fuse_dev111 read buf len: {:?} at pos: {:?}", buf.len(), offset);
-        // let fusein = FuseInHeader::new(104, 26, 1234, 2, 0, 0, 0, 0);
-        // fusein.write_to(buf);
-        // let initin = FuseInitIn::new(10, 229, 0, 0, 0, [0; 11]);
-        // initin.write_to(&mut buf[40..]);
-        // fusein.print();
-        // initin.print();
 
         let mut flag;
+        let mut vec_len = 0;
 
         unsafe {
             if FUSE_VEC.is_none() {
@@ -87,22 +82,19 @@ impl VfsNodeOps for FuseDev {
     
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                let len = vec.len();
-                buf[..len].copy_from_slice(&vec[..len]);
+                vec_len = vec.len();
+                buf[..vec_len].copy_from_slice(&vec[..vec_len]);
                 info!("Fusevec _read_: {:?}", vec);
                 vec.clear();
             }
 
         }
         
-        Ok(buf.len())
+        Ok(vec_len)
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
         debug!("fuse_dev222 writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
-        // if buf.len() == 16 {
-        //     info!("fuse buf writes {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]);
-        // }
 
         let mut flag;
 
