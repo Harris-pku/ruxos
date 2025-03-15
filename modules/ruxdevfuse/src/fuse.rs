@@ -22,7 +22,7 @@ use axfs_vfs::{VfsDirEntry, VfsError, VfsResult};
 use axfs_vfs::{VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType, VfsOps};
 use spin::{once::Once, RwLock};
 use ruxfs::fuse_st::{
-    FuseAttr, FuseAttrOut, FuseCreateIn, FuseDirent, FuseEntryOut, FuseFlushIn, FuseGetattrIn, FuseInHeader, FuseInitIn, FuseInitOut, FuseOpcode, FuseOpenIn, FuseOpenOut, FuseOutHeader, FuseReadIn, FuseReleaseIn, FuseRenameIn, FuseWriteIn, FuseWriteOut
+    FuseAccessIn, FuseAttr, FuseAttrOut, FuseCreateIn, FuseDirent, FuseEntryOut, FuseFlushIn, FuseGetattrIn, FuseInHeader, FuseInitIn, FuseInitOut, FuseMkdirIn, FuseMknodIn, FuseOpcode, FuseOpenIn, FuseOpenOut, FuseOutHeader, FuseReadIn, FuseReleaseIn, FuseRename2In, FuseRenameIn, FuseWriteIn, FuseWriteOut
 };
 use ruxfs::devfuse::{FUSEFLAG, FUSE_VEC};
 
@@ -44,12 +44,6 @@ impl FuseFS {
             parent: Once::new(),
             root: FuseNode::new(None, 1, FuseAttr::default(), 0, 0),
         }
-    }
-
-    /// Create a subdirectory at the root directory.
-    pub fn mkdir(&self, name: &'static str) -> Arc<FuseNode> {
-        info!("fusefs mkdir...");
-        self.root.mkdir(name)
     }
 
     /// Add a node to the root directory.
@@ -92,7 +86,8 @@ pub struct FuseNode {
     inode: SpinNoIrq<u64>,
     attr: SpinNoIrq<FuseAttr>,
     // name: SpinNoIrq<String>,
-    size: SpinNoIrq<u64>, // file size, 0 if it's a directory
+    size: SpinNoIrq<u64>, // file size
+    flags: SpinNoIrq<u32>, // file flags
     fh: SpinNoIrq<u64>,
 }
 
@@ -106,6 +101,7 @@ impl FuseNode {
             inode: SpinNoIrq::new(inode),
             attr: SpinNoIrq::new(attr),
             size: SpinNoIrq::new(size),
+            flags: SpinNoIrq::new(0x8000),
             // name: SpinNoIrq::new(name),
             fh: SpinNoIrq::new(fh),
         })
@@ -113,8 +109,46 @@ impl FuseNode {
 
     pub(super) fn set_parent(&self, parent: Option<&VfsNodeRef>) {
         info!("fuse_node set_parent...");
-        // self.init();
         *self.parent.write() = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
+    }
+
+    pub fn is_dir(&self) -> bool {
+        let attr_guard = self.attr.lock();
+        let attr = &*attr_guard;
+        let mode = attr.get_mode();
+        // 0x8124 => file ( can read => 0x8000
+        // 0x81a4 => file ( can read and write => 0x8001
+        // 0x41ed => directory ( can read and execute
+        // S_IFDIR = 0x4000
+        // S_IFREG = 0x8000
+        mode & 0x4000 == 0x4000
+    }
+
+    pub fn file_flags(&self) -> u32 {
+        let attr_guard = self.attr.lock();
+        let attr = &*attr_guard;
+        let mode = attr.get_mode();
+        let flags = match mode & 0x1c0 {
+            0x80 => 0x8001, 
+            0x100 => 0x8000, // 0x8124
+            0x180 => 0x8001, // 0x81a4
+            0x1c0 => 0x8002, // 0x81ed?
+            _ => 0x8000,
+        };
+        flags
+    }
+
+    pub fn dir_flags(&self) -> u32 {
+        let attr_guard = self.attr.lock();
+        let attr = &*attr_guard;
+        let mode = attr.get_mode();
+        let flags = match mode & 0x1c0 {
+            0x20 => 0x18801, // O_WRONLY
+            0x40 => 0x18800, // O_RDONLY
+            0x80 => 0x18802, // O_RDWR
+            _ => 0x18800,
+        };
+        flags
     }
 
     pub fn check_init(&self) {
@@ -123,66 +157,6 @@ impl FuseNode {
             INITFLAG.store(0, Ordering::Relaxed);
             self.init();
         }
-    }
-
-    /// Create a subdirectory at this directory.
-    // FuseMkdir = 9
-    pub fn mkdir(self: &Arc<Self>, name: &'static str) -> Arc<Self> {
-        self.check_init();
-        info!("\nNEW FUSE REQUEST:\n  fuse_node MKDIR({:?}) {:?} here...", FuseOpcode::FuseMkdir as u32, name);
-
-        unsafe {
-            if FUSE_VEC.is_none() {
-                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
-            }
-
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            info!("pid = {:?}", pid);
-            let nodeid_guard = self.inode.lock();
-            let nodeid = *nodeid_guard;
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseMkdir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
-            let mut fusebuf = [0; 40];
-            fusein.write_to(&mut fusebuf);
-
-            if let Some(vec_arc) = FUSE_VEC.as_ref() {
-                let mut vec = vec_arc.lock();
-                vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at mkdir in devfuse: {:?}", vec);
-            }
-
-            FUSEFLAG.store(FuseOpcode::FuseMkdir as i32, Ordering::Relaxed);
-
-            loop {
-                let flag = FUSEFLAG.load(Ordering::SeqCst);
-                if flag < 0 {
-                    info!("Fuseflag at mkdir is set to {:?}, exiting loop. !!!", flag);
-                    break;
-                }
-                ruxtask::yield_now();
-            }
-
-            let mut outbuf = [0; 120];
-
-            if let Some(vec_arc) = FUSE_VEC.as_ref() {
-                let mut vec = vec_arc.lock();
-                info!("Fusevec back to mkdir: {:?}", vec);
-                outbuf.clone_from_slice(&vec);
-                vec.clear();
-            }
-
-            let fuseout = FuseOutHeader::read_from(&outbuf);
-            fuseout.print();
-
-            FUSEFLAG.store(0, Ordering::Relaxed);
-        }
-
-        info!("fuse_node mkdir finish successfully...");
-
-        let parent = self.clone() as VfsNodeRef;
-        let node = Self::new(Some(&parent), 0, FuseAttr::default(), 0, 0);
-        self.children.write().insert(name, node.clone());
-        node
     }
 
     /// Add a node to this directory.
@@ -202,8 +176,8 @@ impl FuseNode {
 
             UNIQUE_ID += 2;
             let pid = current().id().as_u64();
-            info!("pid = {:?}", pid);
-            let fusein = FuseInHeader::new(104, FuseOpcode::FuseInit as u32, UNIQUE_ID, 1, 1000, 1000, pid as u32, 0);
+            debug!("pid = {:?}", pid);
+            let fusein = FuseInHeader::new(104, FuseOpcode::FuseInit as u32, UNIQUE_ID, 1, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 104];
             fusein.write_to(&mut fusebuf);
             let initin = FuseInitIn::new(7, 38, 0x00020000, 0x33fffffb, 0, [0; 11]);
@@ -214,7 +188,7 @@ impl FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at init in devfuse: {:?}", vec);
+                debug!("Fusevec at init in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseInit as i32, Ordering::Relaxed);
@@ -222,7 +196,7 @@ impl FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at init is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at init is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -232,7 +206,7 @@ impl FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to init: {:?}", vec);
+                debug!("Fusevec back to init: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -270,11 +244,12 @@ impl FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpendir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpendir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 48];
             fusein.write_to(&mut fusebuf);
-            let openin = FuseOpenIn::new(0, 0x18800);
+            let openin = FuseOpenIn::new(0x18800, 0);
             openin.write_to(&mut fusebuf[40..]);
             fusein.print();
             openin.print();
@@ -282,7 +257,7 @@ impl FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at open_dir in devfuse: {:?}", vec);
+                debug!("Fusevec at open_dir in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseOpendir as i32, Ordering::Relaxed);
@@ -290,7 +265,7 @@ impl FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at open_dir is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at open_dir is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -300,7 +275,7 @@ impl FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to open_dir: {:?}", vec);
+                debug!("Fusevec back to open_dir: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -324,6 +299,8 @@ impl FuseNode {
 
         if opendir_error < 0 {
             match opendir_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -20 => return Err(VfsError::NotADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -359,9 +336,9 @@ impl FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseReleasedir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(64, FuseOpcode::FuseReleasedir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 64];
             fusein.write_to(&mut fusebuf);
             let releasein = FuseReleaseIn::new(fh, 0x18800, 0, 0);
@@ -372,7 +349,7 @@ impl FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at release_dir in devfuse: {:?}", vec);
+                debug!("Fusevec at release_dir in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseReleasedir as i32, Ordering::Relaxed);
@@ -380,7 +357,7 @@ impl FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at release_dir is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at release_dir is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -390,7 +367,7 @@ impl FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to release_dir: {:?}", vec);
+                debug!("Fusevec back to release_dir: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -412,6 +389,8 @@ impl FuseNode {
 
         if releasedir_error < 0 {
             match releasedir_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -20 => return Err(VfsError::NotADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -440,9 +419,9 @@ impl FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseFlush as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(64, FuseOpcode::FuseFlush as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 64];
             fusein.write_to(&mut fusebuf);
             let flushin = FuseFlushIn::new(fh, 0, 0, 0);
@@ -453,7 +432,7 @@ impl FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at flush in devfuse: {:?}", vec);
+                debug!("Fusevec at flush in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseFlush as i32, Ordering::Relaxed);
@@ -461,7 +440,7 @@ impl FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at flush is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at flush is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -471,7 +450,7 @@ impl FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to flush: {:?}", vec);
+                debug!("Fusevec back to flush: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -493,10 +472,439 @@ impl FuseNode {
 
         if flush_error < 0 {
             match flush_error {
+                -13 => return Err(VfsError::PermissionDenied),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
         } else {
+            Ok(())
+        }
+    }
+
+    // FuseMknod = 8
+    pub fn mknod(&self, name: &str) -> VfsResult {
+        self.check_init();
+        info!("\nNEW FUSE REQUEST:\n  fuse_node MKNOD({:?}) {:?} here...", FuseOpcode::FuseMknod as u32, name);
+
+        let mknod_error;
+        let mknodout;
+
+        unsafe {
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 2;
+            let pid = current().id().as_u64();
+            let name_len = name.len();
+            let nodeid_guard = self.inode.lock();
+            let nodeid = *nodeid_guard;
+            let fh_guard = self.fh.lock();
+            let fh = *fh_guard;
+            let size_guard = self.size.lock();
+            let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+
+            let fusein = FuseInHeader::new(57 + name_len as u32, FuseOpcode::FuseMknod as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 180];
+            fusein.write_to(&mut fusebuf);
+            let mknodin = FuseMknodIn::new(0x81a4, 0, 0);
+            mknodin.write_to(&mut fusebuf[40..]);
+            fusebuf[56..56 + name_len].copy_from_slice(name.as_bytes());
+            fusein.print();
+            mknodin.print();
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                debug!("Fusevec at mknod in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseMknod as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    debug!("Fuseflag at mknod is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            let mut outbuf = [0; 144];
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                debug!("Fusevec back to mknod: {:?}", vec);
+                outbuf[0..vec.len()].copy_from_slice(&vec);
+                vec.clear();
+            }
+
+            let fuseout = FuseOutHeader::read_from(&outbuf);
+
+            if fuseout.is_ok() {
+                mknodout = FuseEntryOut::read_from(&outbuf[16..]);
+                mknodout.print();
+                mknod_error = 1;
+            }
+            else {
+                mknod_error = fuseout.error();
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+
+            info!("fuse_node mknod finish successfully...");
+
+            if mknod_error < 0 {
+                match mknod_error {
+                    -13 => return Err(VfsError::PermissionDenied),
+                    -17 => return Err(VfsError::AlreadyExists),
+                    -38 => return Err(VfsError::FunctionNotImplemented),
+                    _ => return Err(VfsError::PermissionDenied),
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    // FuseMkdir = 9
+    pub fn mkdir(&self, name: &str) -> VfsResult {
+        self.check_init();
+        info!("\nNEW FUSE REQUEST:\n  fuse_node MKDIR({:?}) {:?} here...", FuseOpcode::FuseMkdir as u32, name);
+
+        let mkdir_error;
+        let mkdirout;
+
+        unsafe {
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 2;
+            let pid = current().id().as_u64();
+            let name_len = name.len();
+            let nodeid_guard = self.inode.lock();
+            let nodeid = *nodeid_guard;
+            let fh_guard = self.fh.lock();
+            let fh = *fh_guard;
+            let size_guard = self.size.lock();
+            let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+
+            let fusein = FuseInHeader::new(49 + name_len as u32, FuseOpcode::FuseMkdir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 180];
+            fusein.write_to(&mut fusebuf);
+            let mkdirin = FuseMkdirIn::new(755, 22);
+            mkdirin.write_to(&mut fusebuf[40..]);
+            fusebuf[48..48 + name_len].copy_from_slice(name.as_bytes());
+            fusein.print();
+            mkdirin.print();
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                debug!("Fusevec at mkdir in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseMkdir as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    debug!("Fuseflag at mkdir is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            let mut outbuf = [0; 144];
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                debug!("Fusevec back to mkdir: {:?}", vec);
+                outbuf[0..vec.len()].copy_from_slice(&vec);
+                vec.clear();
+            }
+
+            let fuseout = FuseOutHeader::read_from(&outbuf);
+            fuseout.print();
+
+            if fuseout.is_ok() {
+                mkdirout = FuseEntryOut::read_from(&outbuf[16..]);
+                mkdirout.print();
+                mkdir_error = 1;
+            }
+            else {
+                mkdir_error = fuseout.error();
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+        }
+
+        info!("fuse_node mkdir finish successfully...");        
+
+        if mkdir_error < 0 {
+            match mkdir_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -17 => return Err(VfsError::AlreadyExists),
+                -38 => return Err(VfsError::FunctionNotImplemented),
+                _ => return Err(VfsError::PermissionDenied),
+            }
+        }
+        
+        Ok(())
+    }
+
+    // FuseRmdir = 11
+    pub fn rmdir(&self, name: &str) -> VfsResult {
+        self.check_init();
+        info!("\nNEW FUSE REQUEST:\n  fuse_node RMDIR({:?}) {:?} here...", FuseOpcode::FuseRmdir as u32, name);
+
+        let rmdir_error;
+
+        unsafe {
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 2;
+            let pid = current().id().as_u64();
+            let name_len = name.len();
+            let nodeid_guard = self.inode.lock();
+            let nodeid = *nodeid_guard;
+            let fh_guard = self.fh.lock();
+            let fh = *fh_guard;
+            let size_guard = self.size.lock();
+            let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+
+            let fusein = FuseInHeader::new(41 + name_len as u32, FuseOpcode::FuseRmdir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 180];
+            fusein.write_to(&mut fusebuf);
+            fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
+            fusein.print();
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                debug!("Fusevec at rmdir in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseRmdir as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    debug!("Fuseflag at rmdir is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            let mut outbuf = [0; 16];
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                debug!("Fusevec back to rmdir: {:?}", vec);
+                outbuf[0..vec.len()].copy_from_slice(&vec);
+                vec.clear();
+            }
+
+            let fuseout = FuseOutHeader::read_from(&outbuf);
+            fuseout.print();
+
+            if fuseout.is_ok() {
+                rmdir_error = 1;
+            }
+            else {
+                rmdir_error = fuseout.error();
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+
+            info!("fuse_node rmdir finish successfully...");
+
+            if rmdir_error < 0 {
+                match rmdir_error {
+                    -2 => return Err(VfsError::NotFound),
+                    -13 => return Err(VfsError::PermissionDenied),
+                    -20 => return Err(VfsError::NotADirectory),
+                    -38 => return Err(VfsError::FunctionNotImplemented),
+                    _ => return Err(VfsError::PermissionDenied),
+                }
+            }
+
+            Ok(())
+
+        }
+    }
+
+    // FuseRename2 = 45
+    pub fn rename2(&self, old: &str, new: &str) -> VfsResult {
+        self.check_init();
+        info!("\nNEW FUSE REQUEST:\n  fuse_node RENAME2({:?}) from {:?} to {:?} here...", FuseOpcode::FuseRename2 as u32, old, new);
+
+        let rename_error;
+
+        unsafe {
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 2;
+            let pid = current().id().as_u64();
+            let old_len = old.len();
+            let new_len = new.len();
+            let nodeid_guard = self.inode.lock();
+            let nodeid = *nodeid_guard;
+            let fh_guard = self.fh.lock();
+            let fh = *fh_guard;
+            let size_guard = self.size.lock();
+            let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+
+            let fusein = FuseInHeader::new(58 + (old_len + new_len) as u32, FuseOpcode::FuseRename2 as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 280];
+            fusein.write_to(&mut fusebuf);
+            let rename2in = FuseRename2In::new(1, 1);
+            rename2in.write_to(&mut fusebuf[40..]);
+            fusebuf[56..56 + old_len].copy_from_slice(old.as_bytes());
+            fusebuf[57 + old_len..57 + old_len + new_len].copy_from_slice(new.as_bytes());
+            fusein.print();
+            rename2in.print();
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                debug!("Fusevec at rename2 in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseRename2 as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    debug!("Fuseflag at rename2 is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            let mut outbuf = [0; 16];
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                debug!("Fusevec back to rename2: {:?}", vec);
+                outbuf[0..vec.len()].copy_from_slice(&vec);
+                vec.clear();
+            }
+
+            let fuseout = FuseOutHeader::read_from(&outbuf);
+            fuseout.print();
+
+            if fuseout.is_ok() {
+                rename_error = 1;
+            }
+            else {
+                rename_error = fuseout.error();
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+
+            info!("fuse_node rename2 from {:?} to {:?} finish successfully...", old, new);
+
+            if rename_error < 0 {
+                match rename_error {
+                    -2 => return Err(VfsError::NotFound),
+                    -13 => return Err(VfsError::PermissionDenied),
+                    -38 => return Err(VfsError::FunctionNotImplemented),
+                    _ => return Err(VfsError::PermissionDenied),
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    // FuseAccess = 34
+    pub fn access(&self) -> VfsResult {
+        self.check_init();
+        info!("\nNEW FUSE REQUEST:\n  fuse_node ACCESS({:?}) here...", FuseOpcode::FuseAccess as u32);
+
+        let access_error;
+
+        unsafe {
+            if FUSE_VEC.is_none() {
+                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+            }
+
+            UNIQUE_ID += 2;
+            let pid = current().id().as_u64();
+            let nodeid_guard = self.inode.lock();
+            let nodeid = *nodeid_guard;
+            let fh_guard = self.fh.lock();
+            let fh = *fh_guard;
+            let size_guard = self.size.lock();
+            let size = *size_guard;
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+
+            let fusein = FuseInHeader::new(48, FuseOpcode::FuseAccess as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 48];
+            fusein.write_to(&mut fusebuf);
+            let accessin = FuseAccessIn::new(1);
+            accessin.write_to(&mut fusebuf[40..]);
+            fusein.print();
+            accessin.print();
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                vec.extend_from_slice(&fusebuf);
+                debug!("Fusevec at access in devfuse: {:?}", vec);
+            }
+
+            FUSEFLAG.store(FuseOpcode::FuseAccess as i32, Ordering::Relaxed);
+
+            loop {
+                let flag = FUSEFLAG.load(Ordering::SeqCst);
+                if flag < 0 {
+                    debug!("Fuseflag at access is set to {:?}, exiting loop. !!!", flag);
+                    break;
+                }
+                ruxtask::yield_now();
+            }
+
+            let mut outbuf = [0; 16];
+
+            if let Some(vec_arc) = FUSE_VEC.as_ref() {
+                let mut vec = vec_arc.lock();
+                debug!("Fusevec back to access: {:?}", vec);
+                outbuf[0..vec.len()].copy_from_slice(&vec);
+                vec.clear();
+            }
+
+            let fuseout = FuseOutHeader::read_from(&outbuf);
+            fuseout.print();
+
+            if fuseout.is_ok() {
+                access_error = 1;
+            }
+            else {
+                access_error = fuseout.error();
+            }
+
+            FUSEFLAG.store(0, Ordering::Relaxed);
+
+            info!("fuse_node access finish successfully...");
+
+            if access_error < 0 {
+                match access_error {
+                    -13 => return Err(VfsError::PermissionDenied),
+                    -38 => return Err(VfsError::FunctionNotImplemented),
+                    _ => return Err(VfsError::PermissionDenied),
+                }
+            }
+
             Ok(())
         }
     }
@@ -506,11 +914,9 @@ impl FuseNode {
 impl VfsNodeOps for FuseNode {
     // FuseOpen = 14
     fn open(&self) -> VfsResult {
-        let ssize_guard = self.size.lock();
-        let ssize = *ssize_guard;
-        if ssize == 0 {
+        if self.is_dir() {
             return self.open_dir()
-        } 
+        }
         
         self.check_init();
         info!("\nNEW FUSE REQUEST:\n  fuse_node OPEN({:?}) here...", FuseOpcode::FuseOpen as u32);
@@ -531,12 +937,18 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
-
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpen as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            
+            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpen as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 48];
             fusein.write_to(&mut fusebuf);
-            let openin = FuseOpenIn::new(0, 0x18800);
+            let mut flags = self.file_flags();
+            flags = 0x8000;
+            // if flags == 0x8001 {
+            //     flags = 0x8201;
+            // }
+
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, size, self.is_dir(), flags);
+            let openin = FuseOpenIn::new(flags, 0);
             openin.write_to(&mut fusebuf[40..]);
             fusein.print();
             openin.print();
@@ -544,7 +956,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at open in devfuse: {:?}", vec);
+                debug!("Fusevec at open in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseOpen as i32, Ordering::Relaxed);
@@ -552,7 +964,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at open is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at open is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -562,7 +974,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to open: {:?}", vec);
+                debug!("Fusevec back to open: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -585,6 +997,8 @@ impl VfsNodeOps for FuseNode {
 
         if open_error < 0 {
             match open_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -21 => return Err(VfsError::IsADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -602,10 +1016,8 @@ impl VfsNodeOps for FuseNode {
 
     // FuseRelease = 18
     fn release(&self) -> VfsResult {
-        let ssize_guard = self.size.lock();
-        let ssize = *ssize_guard;
-        if ssize == 0 {
-            return self.release_dir()
+        if self.is_dir() {
+            return self.release_dir()            
         }
 
         self.check_init();
@@ -626,12 +1038,16 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
 
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseRelease as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(64, FuseOpcode::FuseRelease as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 64];
             fusein.write_to(&mut fusebuf);
-            let releasein = FuseReleaseIn::new(fh, 0x18800, 0, 0);
+            let flags_guard = self.flags.lock();
+            let flags = *flags_guard;
+
+
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, size, self.is_dir(), flags);
+            let releasein = FuseReleaseIn::new(fh, flags, 0, 0);
             releasein.write_to(&mut fusebuf[40..]);
             fusein.print();
             releasein.print();
@@ -639,7 +1055,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at release in devfuse: {:?}", vec);
+                debug!("Fusevec at release in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseRelease as i32, Ordering::Relaxed);
@@ -647,7 +1063,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at release is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at release is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -657,7 +1073,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to release: {:?}", vec);
+                debug!("Fusevec back to release: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -679,6 +1095,8 @@ impl VfsNodeOps for FuseNode {
         
         if release_error < 0 {
             match release_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -21 => return Err(VfsError::IsADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -692,7 +1110,7 @@ impl VfsNodeOps for FuseNode {
         self.check_init();
         info!("\nNEW FUSE REQUEST:\n  fuse_node GET_ATTR({:?}) here...", FuseOpcode::FuseGetattr as u32);
     
-        let mut attr_size;
+        let attr_size;
 
         unsafe {
             if FUSE_VEC.is_none() {
@@ -707,9 +1125,9 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(56, FuseOpcode::FuseGetattr as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(56, FuseOpcode::FuseGetattr as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 56];
             fusein.write_to(&mut fusebuf);
             let getattrin = FuseGetattrIn::new(0, 0, fh);
@@ -720,7 +1138,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at get_attr in devfuse: {:?}", vec);
+                debug!("Fusevec at get_attr in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseGetattr as i32, Ordering::Relaxed);
@@ -728,7 +1146,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at get_attr is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at get_attr is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -738,7 +1156,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to get_attr: {:?}", vec);
+                debug!("Fusevec back to get_attr: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -761,11 +1179,16 @@ impl VfsNodeOps for FuseNode {
 
         info!("fuse_node get_attr finish successfully...");
 
-        if attr_size > 0 {
-            Ok(VfsNodeAttr::new_file(attr_size, 0))
+        if self.is_dir() {
+            Ok(VfsNodeAttr::new_dir(attr_size, 0))
         } else {
-            Ok(VfsNodeAttr::new_dir(4096, 0))
+            Ok(VfsNodeAttr::new_file(attr_size, 0))
         }
+
+    }
+
+    fn parent(&self) -> Option<VfsNodeRef> {
+        self.parent.read().upgrade()
     }
 
     // FuseRead = 15
@@ -789,11 +1212,15 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
 
-            let fusein = FuseInHeader::new(80, FuseOpcode::FuseRead as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(80, FuseOpcode::FuseRead as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 80];
             fusein.write_to(&mut fusebuf);
+
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
+            let mut flags_guard = self.flags.lock();
+            let readflags = &mut *flags_guard;
+            *readflags = 0x8000;
             let readin = FuseReadIn::new(fh, offset, 4096, 0, 0, 0x8000);
             readin.write_to(&mut fusebuf[40..]);
             fusein.print();
@@ -802,7 +1229,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at read in devfuse: {:?}", vec);
+                debug!("Fusevec at read in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseRead as i32, Ordering::Relaxed);
@@ -810,7 +1237,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at read is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at read is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -820,7 +1247,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to read: {:?}", vec);
+                debug!("Fusevec back to read: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 outlen = vec.len() - 16;
                 vec.clear();
@@ -848,6 +1275,8 @@ impl VfsNodeOps for FuseNode {
 
         if read_error < 0 {
             match read_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -21 => return Err(VfsError::IsADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -859,10 +1288,10 @@ impl VfsNodeOps for FuseNode {
     // FuseWrite = 16
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
         self.check_init();
-        info!("\nNEW FUSE REQUEST:\n  fuse_node WRITE({:?}) here, offset: {:?}, buf_len: {:?}...", FuseOpcode::FuseWrite as u32, offset, buf.len());
+        info!("\nNEW FUSE REQUEST:\n  fuse_node WRITE({:?}) here, offset: {:?}, buf_len: {:?}, buf: {:?}...", FuseOpcode::FuseWrite as u32, offset, buf.len(), buf);
 
         let write_error;
-        let mut outlen = 0;
+        let writeout;
 
         unsafe {
             if FUSE_VEC.is_none() {
@@ -871,19 +1300,26 @@ impl VfsNodeOps for FuseNode {
 
             UNIQUE_ID += 2;
             let pid = current().id().as_u64();
+            let buf_len = buf.len();
             let nodeid_guard = self.inode.lock();
             let nodeid = *nodeid_guard;
             let fh_guard = self.fh.lock();
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
 
-            let fusein = FuseInHeader::new(120, FuseOpcode::FuseWrite as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
-            let mut fusebuf = [0; 120];
+            let fusein = FuseInHeader::new(81 + buf_len as u32, FuseOpcode::FuseWrite as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 12000];
             fusein.write_to(&mut fusebuf);
-            let writein = FuseWriteIn::new(fh, offset, 0, 0, 0, 0x8000);
+            let flags = self.file_flags();
+            let mut flags_guard = self.flags.lock();
+            let wflags = &mut *flags_guard;
+            *wflags = flags;
+
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, size, self.is_dir(), flags);
+            let writein = FuseWriteIn::new(fh, offset, (buf_len+1) as u32, 0, 0, flags);
             writein.write_to(&mut fusebuf[40..]);
+            fusebuf[80..80 + buf_len].copy_from_slice(buf);
             fusein.print();
             writein.print();
 
@@ -898,7 +1334,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at write is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at write is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -915,9 +1351,9 @@ impl VfsNodeOps for FuseNode {
 
             let fuseout = FuseOutHeader::read_from(&outbuf);
             fuseout.print();
-            let writeout = FuseWriteOut::read_from(&outbuf[16..]);
             
             if fuseout.is_ok() {
+                writeout = FuseWriteOut::read_from(&outbuf[16..]);
                 writeout.print();
                 write_error = 1;
             }
@@ -932,6 +1368,10 @@ impl VfsNodeOps for FuseNode {
 
         if write_error < 0 {
             match write_error {
+                -2 => return Err(VfsError::NotFound),
+                -13 => return Err(VfsError::PermissionDenied),
+                -21 => return Err(VfsError::IsADirectory),
+                // -30 => return Err(VfsError::NoSpace),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -960,9 +1400,9 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseFsync as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(40, FuseOpcode::FuseFsync as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 40];
             fusein.write_to(&mut fusebuf);
             fusein.print();
@@ -970,7 +1410,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at fsync in devfuse: {:?}", vec);
+                debug!("Fusevec at fsync in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseFsync as i32, Ordering::Relaxed);
@@ -978,7 +1418,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at fsync is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at fsync is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -988,7 +1428,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to fsync: {:?}", vec);
+                debug!("Fusevec back to fsync: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -1025,7 +1465,7 @@ impl VfsNodeOps for FuseNode {
         info!("\nNEW FUSE REQUEST:\n  fuse_node LOOKUP({:?}) {:?} here...", FuseOpcode::FuseLookup as u32, path);
 
         let lookup_error;
-        let mut entryout ;
+        let mut entryout = FuseEntryOut::default();
 
         unsafe {
             if FUSE_VEC.is_none() {
@@ -1041,18 +1481,18 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x} size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(41 + path_len as u32, FuseOpcode::FuseLookup as u32, UNIQUE_ID, 1, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(41 + path_len as u32, FuseOpcode::FuseLookup as u32, UNIQUE_ID, 1, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
+            fusein.write_to(&mut fusebuf[0..40]);
             fusebuf[40..40+path_len].copy_from_slice(path.as_bytes());
             fusein.print();
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at lookup in devfuse: {:?}", vec);
+                debug!("Fusevec at lookup in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseLookup as i32, Ordering::Relaxed);
@@ -1060,7 +1500,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at lookup is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at lookup is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -1070,16 +1510,16 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to lookup: {:?}", vec);
+                debug!("Fusevec back to lookup: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
 
             let fuseout = FuseOutHeader::read_from(&outbuf[..16]);
             fuseout.print();
-            entryout = FuseEntryOut::read_from(&outbuf[16..]);
 
             if fuseout.is_ok() {
+                entryout = FuseEntryOut::read_from(&outbuf[16..]);
                 entryout.print();
                 lookup_error = 1;
             }
@@ -1104,7 +1544,7 @@ impl VfsNodeOps for FuseNode {
         if let Some(rest) = rest {
             self.lookup(rest)
         } else {
-            let node = match name {
+            match name {
                 "" | "." => {
                     let mut ino_guard = self.inode.lock();
                     let ino = &mut *ino_guard;
@@ -1115,11 +1555,8 @@ impl VfsNodeOps for FuseNode {
                     let mut size_guard = self.size.lock();
                     let size = &mut *size_guard;
                     *size = entryout.get_size();
-                    // let mut name_guard = self.name.lock();
-                    // let mut name = *name_guard;
-                    // name = String::from("");
-                    // info!("lookup entryout.inode is {:?}...", entryout.get_nodeid());
-                    // info!("lookup modify inode to {:?}...", self.inode.lock());
+                    debug!("lookup entryout.inode is {:?}...", entryout.get_nodeid());
+                    debug!("lookup modify inode to {:?}...", self.inode.lock());
                     return Ok(self.clone() as VfsNodeRef);
                 },
                 ".." => {
@@ -1138,10 +1575,35 @@ impl VfsNodeOps for FuseNode {
 
     // FuseCreate = 20
     fn create(&self, path: &str, ty: VfsNodeType) -> VfsResult {
+        if ty == VfsNodeType::Dir {
+            return self.mkdir(path)
+        }
+
+        let (name, rest) = split_path(path);
+        if let Some(rest) = rest {
+            if name == "." {
+                return self.create(rest, ty)
+            }
+            if name == ".." {
+                return self.parent().ok_or(VfsError::NotFound)?.create(rest, ty)
+            }
+        }
+
         self.check_init();
-        info!("\nNEW FUSE REQUEST:\n  fuse_node CREATE({:?}) {:?} here...", FuseOpcode::FuseCreate as u32, path);
+        let newtype = match ty {
+            VfsNodeType::Fifo => "fifo",
+            VfsNodeType::CharDevice => "char device",
+            VfsNodeType::BlockDevice => "block device",
+            VfsNodeType::File => "file",
+            VfsNodeType::SymLink => "symlink",
+            VfsNodeType::Socket => "socket",
+            _ => "unknown",
+        };
+        info!("\nNEW FUSE REQUEST:\n  fuse_node CREATE({:?}) {:?} here, type: {:?}...", FuseOpcode::FuseCreate as u32, path, newtype);
 
         let create_error;
+        let createout;
+        let openout;
 
         unsafe {
             if FUSE_VEC.is_none() {
@@ -1150,26 +1612,28 @@ impl VfsNodeOps for FuseNode {
 
             UNIQUE_ID += 2;
             let pid = current().id().as_u64();
+            let path_len = path.len();
             let nodeid_guard = self.inode.lock();
             let nodeid = *nodeid_guard;
             let fh_guard = self.fh.lock();
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(56, FuseOpcode::FuseCreate as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
-            let mut fusebuf = [0; 56];
+            let fusein = FuseInHeader::new(57 + path_len as u32, FuseOpcode::FuseCreate as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 180];
             fusein.write_to(&mut fusebuf);
-            let createin = FuseCreateIn::new(0, 0, 0, 0);
+            let createin = FuseCreateIn::new(0x8241, 100644, 22, 0);
             createin.write_to(&mut fusebuf[40..]);
+            fusebuf[56..56+path_len].copy_from_slice(path.as_bytes());
             fusein.print();
             createin.print();
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at create in devfuse: {:?}", vec);
+                debug!("Fusevec at create in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseCreate as i32, Ordering::Relaxed);
@@ -1177,7 +1641,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at create is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at create is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -1187,16 +1651,19 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to create: {:?}", vec);
+                debug!("Fusevec back to create: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
 
             let fuseout = FuseOutHeader::read_from(&outbuf);
             fuseout.print();
-            // let entryout = FuseEntryOut::read_from(&outbuf[16..]);
-            // entryout.print();
+
             if fuseout.is_ok() {
+                createout = FuseEntryOut::read_from(&outbuf[16..]);
+                createout.print();
+                openout = FuseOpenOut::read_from(&outbuf[144..]);
+                openout.print();
                 create_error = 1;
             }
             else {
@@ -1210,34 +1677,24 @@ impl VfsNodeOps for FuseNode {
 
         if create_error < 0 {
             match create_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -17 => return Err(VfsError::AlreadyExists),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
         }
 
-        let (name, rest) = split_path(path);
-        if let Some(rest) = rest {
-            match name {
-                "" | "." => self.create(rest, ty),
-                ".." => self.parent().ok_or(VfsError::NotFound)?.create(rest, ty),
-                _ => self
-                    .children
-                    .read()
-                    .get(name)
-                    .ok_or(VfsError::NotFound)?
-                    .create(rest, ty),
-            }
-        } else if name.is_empty() || name == "." || name == ".." {
-            Ok(())
-        } else {
-            Err(VfsError::PermissionDenied)
-        }
+        Ok(())
     }
 
     // FuseForget = 2
     fn remove(&self, path: &str) -> VfsResult {
+        if self.is_dir() {
+            return self.rmdir(path)
+        }
+
         self.check_init();
-        info!("\nNEW FUSE REQUEST:\n  fuse_node REMOVE({:?}) {:?} here...", FuseOpcode::FuseForget as u32, path);
+        info!("\nNEW FUSE REQUEST:\n  fuse_node UNLINK({:?}) {:?} here...", FuseOpcode::FuseForget as u32, path);
 
         let remove_error;
 
@@ -1248,23 +1705,25 @@ impl VfsNodeOps for FuseNode {
 
             UNIQUE_ID += 2;
             let pid = current().id().as_u64();
+            let path_len = path.len();
             let nodeid_guard = self.inode.lock();
             let nodeid = *nodeid_guard;
             let fh_guard = self.fh.lock();
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseForget as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
-            let mut fusebuf = [0; 40];
+            let fusein = FuseInHeader::new(41 + path_len as u32, FuseOpcode::FuseForget as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 180];
             fusein.write_to(&mut fusebuf);
+            fusebuf[40..40+path_len].copy_from_slice(path.as_bytes());
             fusein.print();
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at remove in devfuse: {:?}", vec);
+                debug!("Fusevec at remove in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseForget as i32, Ordering::Relaxed);
@@ -1272,7 +1731,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at remove is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at remove is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -1282,7 +1741,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to remove: {:?}", vec);
+                debug!("Fusevec back to remove: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -1304,26 +1763,31 @@ impl VfsNodeOps for FuseNode {
 
         if remove_error < 0 {
             match remove_error {
+                -2 => return Err(VfsError::NotFound),
+                -13 => return Err(VfsError::PermissionDenied),
+                -21 => return Err(VfsError::IsADirectory),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
         }
 
-        let (name, rest) = split_path(path);
-        if let Some(rest) = rest {
-            match name {
-                "" | "." => self.remove(rest),
-                ".." => self.parent().ok_or(VfsError::NotFound)?.remove(rest),
-                _ => self
-                    .children
-                    .read()
-                    .get(name)
-                    .ok_or(VfsError::NotFound)?
-                    .remove(rest),
-            }
-        } else {
-            Err(VfsError::PermissionDenied)
-        }
+        // let (name, rest) = split_path(path);
+        // if let Some(rest) = rest {
+        //     match name {
+        //         "" | "." => self.remove(rest),
+        //         ".." => self.parent().ok_or(VfsError::NotFound)?.remove(rest),
+        //         _ => self
+        //             .children
+        //             .read()
+        //             .get(name)
+        //             .ok_or(VfsError::NotFound)?
+        //             .remove(rest),
+        //     }
+        // } else {
+        //     Err(VfsError::PermissionDenied)
+        // }
+
+        Ok(())
     }
 
     // FuseReaddir = 28
@@ -1347,9 +1811,9 @@ impl VfsNodeOps for FuseNode {
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(80, FuseOpcode::FuseReaddir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
+            let fusein = FuseInHeader::new(80, FuseOpcode::FuseReaddir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 80];
             fusein.write_to(&mut fusebuf);
             let readin = FuseReadIn::new(fh, 0, 4096, 0, 0, 0x18800);
@@ -1360,7 +1824,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at readdir in devfuse: {:?}", vec);
+                debug!("Fusevec at readdir in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseReaddir as i32, Ordering::Relaxed);
@@ -1368,18 +1832,18 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at readdir is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at readdir is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
             }
 
-            let mut outbuf = [0; 1200];
+            let mut outbuf = [0; 12000];
             let mut buf_len = 0;
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to readdir: {:?}", vec);
+                debug!("Fusevec back to readdir: {:?}", vec);
                 buf_len = vec.len();
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
@@ -1411,6 +1875,9 @@ impl VfsNodeOps for FuseNode {
 
         if readdir_error < 0 {
             match readdir_error {
+                -13 => return Err(VfsError::PermissionDenied),
+                -20 => return Err(VfsError::NotADirectory),
+                -22 => return Err(VfsError::InvalidInput),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }
@@ -1421,25 +1888,34 @@ impl VfsNodeOps for FuseNode {
                 0 => *ent = VfsDirEntry::new(".", VfsNodeType::Dir),
                 1 => *ent = VfsDirEntry::new("..", VfsNodeType::Dir),
                 _ => {
-                    info!("dirs.len() = {:?}, i+idx = {:?}", dirs.len(), i + start_idx);
+                    debug!("dirs.len() = {:?}, i+idx = {:?}", dirs.len(), i + start_idx);
                     if let Some(entry) = dirs.get(i + start_idx) {
-                        *ent = VfsDirEntry::new(&entry.get_name(), VfsNodeType::File);
-                        info!("entry = {:?}", &entry.get_name());
+                        let entry_type = entry.get_type_as_vfsnodetype();
+                        *ent = VfsDirEntry::new(&entry.get_name(), entry_type);
+                        debug!("entry: {{ name: {:?}, type: {:?} }}", &entry.get_name(), entry_type);
                     } else {
                         for j in 0..i {
                             info!("entry {:?}: name: {:?}, type: {:?}", j, String::from_utf8(dirents[j].name_as_bytes().to_vec()), &dirents[j].entry_type());
                         }
+                        info!("Ok(i) = {:?}", i);
                         return Ok(i);
                     }
                 }
             }
         }
+
+        for j in 0..dirents.len() {
+            info!("entry {:?}: name: {:?}, type: {:?}", j, String::from_utf8(dirents[j].name_as_bytes().to_vec()), &dirents[j].entry_type());
+        }
         
+        info!("Ok(dirents.len()) = {:?}", dirents.len());
         Ok(dirents.len())
     }
 
     // FuseRename = 12
     fn rename(&self, src_path: &str, dst_path: &str) -> VfsResult {
+        // self.rename2(src_path, dst_path);
+
         self.check_init();
         info!("\nNEW FUSE REQUEST:\n  fuse_node RENAME({:?}) from {:?} to {:?} here...", FuseOpcode::FuseRename as u32, src_path, dst_path);
 
@@ -1452,26 +1928,30 @@ impl VfsNodeOps for FuseNode {
 
             UNIQUE_ID += 2;
             let pid = current().id().as_u64();
+            let src_len = src_path.len();
+            let dst_len = dst_path.len();
             let nodeid_guard = self.inode.lock();
             let nodeid = *nodeid_guard;
             let fh_guard = self.fh.lock();
             let fh = *fh_guard;
             let size_guard = self.size.lock();
             let size = *size_guard;
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}", pid, nodeid, fh, size);
+            info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
 
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseRename as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32, 0);
-            let mut fusebuf = [0; 48];
+            let fusein = FuseInHeader::new(50 + (src_len + dst_len) as u32, FuseOpcode::FuseRename as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let mut fusebuf = [0; 280];
             fusein.write_to(&mut fusebuf);
-            let renamein = FuseRenameIn::new(0);
+            let renamein = FuseRenameIn::new(1);
             renamein.write_to(&mut fusebuf[40..]);
+            fusebuf[48..48 + src_len].copy_from_slice(src_path.as_bytes());
+            fusebuf[49 + src_len..49 + src_len + dst_len].copy_from_slice(dst_path.as_bytes());
             fusein.print();
             renamein.print();
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at rename in devfuse: {:?}", vec);
+                debug!("Fusevec at rename in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseRename as i32, Ordering::Relaxed);
@@ -1479,7 +1959,7 @@ impl VfsNodeOps for FuseNode {
             loop {
                 let flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag < 0 {
-                    info!("Fuseflag at rename is set to {:?}, exiting loop. !!!", flag);
+                    debug!("Fuseflag at rename is set to {:?}, exiting loop. !!!", flag);
                     break;
                 }
                 ruxtask::yield_now();
@@ -1489,7 +1969,7 @@ impl VfsNodeOps for FuseNode {
 
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
-                info!("Fusevec back to rename: {:?}", vec);
+                debug!("Fusevec back to rename: {:?}", vec);
                 outbuf[0..vec.len()].copy_from_slice(&vec);
                 vec.clear();
             }
@@ -1511,6 +1991,8 @@ impl VfsNodeOps for FuseNode {
 
         if rename_error < 0 {
             match rename_error {
+                -2 => return Err(VfsError::NotFound),
+                -13 => return Err(VfsError::PermissionDenied),
                 -38 => return Err(VfsError::FunctionNotImplemented),
                 _ => return Err(VfsError::PermissionDenied),
             }

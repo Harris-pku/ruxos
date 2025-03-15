@@ -108,14 +108,6 @@ impl RootDirectory {
         let mut idx = 0;
         let mut max_len = 0;
 
-        // info!("root lookup - 0");
-
-        // for (i, mp) in self.mounts_lock.lock().iter().enumerate() {
-        //     info!("mounts_vec: {:?}", mp.path);
-        // }
-
-        // info!("root lookup - 1");
-
         // Find the filesystem that has the longest mounted path match
         // TODO: more efficient, e.g. trie
         for (i, mp) in self.mounts_lock.lock().iter().enumerate() {
@@ -126,7 +118,7 @@ impl RootDirectory {
             }
         }
 
-        info!("path = {:#}, idx = {:#}", path, idx);
+        debug!("path = {:#}, idx = {:#}", path, idx);
 
         if max_len == 0 {
             f(self.main_fs.clone(), path) // not matched any mount point

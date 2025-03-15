@@ -32,7 +32,7 @@ pub struct FuseDev {
 impl FuseDev {
     /// Create a new instance.
     pub fn new() -> Self {
-        info!("fuse_dev new here...");
+        debug!("fuse_dev new here...");
         Self {
             data: Mutex::new(vec![0; 1e8 as usize]),
         }
@@ -41,12 +41,12 @@ impl FuseDev {
 
 impl VfsNodeOps for FuseDev {
     fn open(&self) -> VfsResult {
-        info!("fuse_dev open here...");
+        debug!("fuse_dev open here...");
         Ok(())
     }
 
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
-        info!("fuse_dev get_attr here...");
+        debug!("fuse_dev get_attr here...");
         Ok(VfsNodeAttr::new(
             VfsNodePerm::default_file(),
             VfsNodeType::CharDevice,
@@ -56,7 +56,7 @@ impl VfsNodeOps for FuseDev {
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        info!("fuse_dev111 read buf len: {:?} at pos: {:?}", buf.len(), offset);
+        debug!("fuse_dev111 read buf len: {:?} at pos: {:?}", buf.len(), offset);
 
         let mut flag;
         let mut vec_len = 0;
@@ -68,14 +68,14 @@ impl VfsNodeOps for FuseDev {
 
             flag = FUSEFLAG.load(Ordering::SeqCst);
             if flag > 100 {
-                info!("flag in read__ is {:?}, should back to fuse_node.", flag);
+                debug!("flag in read__ is {:?}, should back to fuse_node.", flag);
                 FUSEFLAG.store(-flag, Ordering::Relaxed);
             }
 
             loop {
                 flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag > 0 {
-                    info!("flag _read_ is set to {:?},, exiting loop. hhh", flag);
+                    debug!("flag _read_ is set to {:?},, exiting loop. hhh", flag);
                     break;
                 }
             }
@@ -84,7 +84,7 @@ impl VfsNodeOps for FuseDev {
                 let mut vec = vec_arc.lock();
                 vec_len = vec.len();
                 buf[..vec_len].copy_from_slice(&vec[..vec_len]);
-                info!("Fusevec _read_: {:?}", vec);
+                debug!("Fusevec _read_ len: {:?}, vec: {:?}", vec.len(), vec);
                 vec.clear();
             }
 
@@ -102,7 +102,7 @@ impl VfsNodeOps for FuseDev {
             loop {
                 flag = FUSEFLAG.load(Ordering::SeqCst);
                 if flag > 0 {
-                    info!("Fuseflag _write_ is set to {:?},, exiting loop. yyy", flag);
+                    debug!("Fuseflag _write_ is set to {:?},, exiting loop. yyy", flag);
                     break;
                 }
             }
@@ -110,7 +110,7 @@ impl VfsNodeOps for FuseDev {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&buf);
-                info!("Fusevec _write_: {:?}", vec);
+                debug!("Fusevec _write_ len: {:?}, vec: {:?}", vec.len(), vec);
             }
 
             FUSEFLAG.store(flag+100, Ordering::Relaxed);

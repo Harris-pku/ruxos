@@ -13,6 +13,7 @@ use alloc::string::String;
 use alloc::fmt::Debug;
 use alloc::fmt::Formatter;
 use alloc::fmt::Error;
+use axfs_vfs::VfsNodeType;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FuseOpcode {
@@ -163,7 +164,7 @@ pub struct FuseInHeader { // 40 bytes
 }
 
 impl FuseInHeader {
-    pub fn new(len: u32, opcode: u32, unique: u64, nodeid: u64, uid: u32, gid: u32, pid: u32, padding: u32) -> Self {
+    pub fn new(len: u32, opcode: u32, unique: u64, nodeid: u64, uid: u32, gid: u32, pid: u32) -> Self {
         Self {
             len,
             opcode,
@@ -172,7 +173,7 @@ impl FuseInHeader {
             uid,
             gid,
             pid,
-            padding,
+            padding: 0,
         }
     }
 
@@ -428,6 +429,14 @@ impl FuseAttr {
 			blksize: u32::from_le_bytes(buf[80..84].try_into().unwrap()),
 			flags: u32::from_le_bytes(buf[84..88].try_into().unwrap()),
 		}
+	}
+
+	pub fn get_size(&self) -> u64 {
+		self.size
+	}
+
+	pub fn get_mode(&self) -> u32 {
+		self.mode
 	}
 
 	pub fn print(&self) {
@@ -1667,6 +1676,23 @@ impl FuseDirent {
 
 	pub fn get_name(&self) -> String {
 		self.name.clone()
+	}
+
+	pub fn get_type(&self) -> u32 {
+		self.type_
+	}
+	
+	pub fn get_type_as_vfsnodetype(&self) -> VfsNodeType {
+		match self.type_ {
+			1 => VfsNodeType::Fifo,
+			2 => VfsNodeType::CharDevice,
+			4 => VfsNodeType::Dir,
+			6 => VfsNodeType::BlockDevice,
+			8 => VfsNodeType::File,
+			10 => VfsNodeType::SymLink,
+			12 => VfsNodeType::Socket,
+			_ => VfsNodeType::File,
+		}
 	}
 
 	pub fn get_len(&self) -> usize {
