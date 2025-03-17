@@ -10,6 +10,7 @@ repository = "https://github.com/syswonder/ruxos/tree/main/modules/ruxfuse"
 
 [features]
 alloc = ["axalloc"]
+multitask = ["ruxtask/multitask"]
 
 default = []
 
@@ -29,3 +30,5 @@ memory_addr = "0.1.0"
 
 ruxdriver = { path = "../ruxdriver", features = ["block"] }
 axalloc = { path = "../axalloc", optional = true }
+ruxfs = { path = "../ruxfs" }
+ruxtask = { path = "../ruxtask" }

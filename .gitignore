@@ -19,3 +19,6 @@ apps/c/iperf/
 apps/c/wamr/
 apps/c/nginx/
 *.log
+modules/ruxattt
+modules/ruxfuse/src/fuse_st.rs
+modules/ruxfuse/src/devfuse.rs

@@ -7,26 +7,16 @@
  *   See the Mulan PSL v2 for more details.
  */
 
-//! [RuxOS](https://github.com/syswonder/ruxos) fuse module.
-
-// #![cfg_attr(all(not(test), not(doc)), no_std)]
-// #![feature(doc_auto_cfg)]
-#![cfg_attr(not(test), no_std)]
+//! dev fuse
+#![cfg_attr(all(not(test), not(doc)), no_std)]
+#![feature(doc_auto_cfg)]
 
 // #[macro_use]
-// extern crate log;
-// extern crate alloc;
+extern crate log;
+extern crate alloc;
 
-// pub mod fuse;
+use log::*;
+
+pub mod fuse;
 // pub mod devfuse;
 // pub mod fuse_st;
-
-// use fuse::FuseFS;
-// use alloc::sync::Arc;
-// use log::*;
-
-
-// pub fn fusefs() -> Arc<FuseFS> {
-//     info!("fusefs newfs here...");
-//     Arc::new(FuseFS::new())
-// }

@@ -100,7 +100,6 @@ ruxdriver = { path = "../../modules/ruxdriver", optional = true }
 ruxfs = { path = "../../modules/ruxfs", optional = true }
 rux9p = { path = "../../modules/rux9p", optional = true }
 ruxfuse = { path = "../../modules/ruxfuse", optional = true }
-ruxdevfuse = { path = "../../modules/ruxdevfuse", optional = true }
 ruxnet = { path = "../../modules/ruxnet", optional = true }
 ruxdisplay = { path = "../../modules/ruxdisplay", optional = true }
 axsync = { path = "../../modules/axsync", optional = true }
