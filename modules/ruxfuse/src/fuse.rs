@@ -225,8 +225,7 @@ impl FuseNode {
     }
 
     // FuseLookup = 1
-    pub fn try_get(&self, raw_path: &str) -> VfsResult<VfsNodeRef> {
-        let path = raw_path.trim_start_matches('/');
+    pub fn try_get(&self, path: &str) -> VfsResult<VfsNodeRef> {
         let (name, raw_rest) = split_path(path);
         if raw_rest.is_none() {
             if name == ".." {
@@ -1258,10 +1257,10 @@ impl VfsNodeOps for FuseNode {
             let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpen as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 48];
             fusein.write_to(&mut fusebuf);
-            let flags = self.file_flags();
-            // if flags == 0x8001 {
-            //     flags = 0x8201;
-            // }
+            let mut flags = self.file_flags();
+            if flags == 0x8001 {
+                flags = 0x8002;
+            }
 
             info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, size, self.is_dir(), flags);
             let openin = FuseOpenIn::new(flags, 0);
@@ -1536,8 +1535,8 @@ impl VfsNodeOps for FuseNode {
             info!("pid = {:?}, inode = {:?}, fh = {:#x}, size = {:?}, is_dir: {:?}", pid, nodeid, fh, size, self.is_dir());
             let mut flags_guard = self.flags.lock();
             let readflags = &mut *flags_guard;
-            *readflags = 0x8000;
-            let readin = FuseReadIn::new(fh, offset, 4096, 0, 0, 0x8000);
+            *readflags = 0x8002;
+            let readin = FuseReadIn::new(fh, offset, 4096, 0, 0, 0x8002);
             readin.write_to(&mut fusebuf[40..]);
             fusein.print();
             readin.print();
@@ -1604,7 +1603,7 @@ impl VfsNodeOps for FuseNode {
     // FuseWrite = 16
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
         self.check_init();
-        info!("\nNEW FUSE REQUEST:\n  fuse_node WRITE({:?}) here, offset: {:?}, buf_len: {:?}, buf: {:?}...", FuseOpcode::FuseWrite as u32, offset, buf.len(), buf);
+        info!("\nNEW FUSE REQUEST:\n  fuse_node WRITE({:?}) here, offset: {:?}, buf_len: {:?}, buf: {:?}", FuseOpcode::FuseWrite as u32, offset, buf.len(), buf);
 
         let write_error;
         let writeout;
@@ -1624,7 +1623,7 @@ impl VfsNodeOps for FuseNode {
             let size_guard = self.size.lock();
             let size = *size_guard;
 
-            let fusein = FuseInHeader::new(81 + buf_len as u32, FuseOpcode::FuseWrite as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
+            let fusein = FuseInHeader::new(80 + buf_len as u32, FuseOpcode::FuseWrite as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
             let mut fusebuf = [0; 12000];
             fusein.write_to(&mut fusebuf);
             let flags = self.file_flags();
@@ -1642,7 +1641,7 @@ impl VfsNodeOps for FuseNode {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
-                info!("Fusevec at write in devfuse: {:?}", vec);
+                debug!("Fusevec at write in devfuse: {:?}", vec);
             }
 
             FUSEFLAG.store(FuseOpcode::FuseWrite as i32, Ordering::Relaxed);
@@ -1776,7 +1775,8 @@ impl VfsNodeOps for FuseNode {
 
     fn truncate(&self, size: u64) -> VfsResult {
         info!("fuse_node truncate is not implemented, size: {:?}...", size);
-        Err(VfsError::FunctionNotImplemented)
+        // Err(VfsError::FunctionNotImplemented)
+        Ok(())
     }
 
     fn lookup(self: Arc<Self>, raw_path: &str) -> VfsResult<VfsNodeRef> {
@@ -1784,11 +1784,10 @@ impl VfsNodeOps for FuseNode {
     }
 
     // FuseCreate = 20
-    fn create(&self, raw_path: &str, ty: VfsNodeType) -> VfsResult {
-        let path = raw_path.trim_start_matches('/');
+    fn create(&self, path: &str, ty: VfsNodeType) -> VfsResult {
         let (name, raw_rest) = split_path(path);
         if let Some(rest) = raw_rest {
-            if name == "." {
+            if name == "" || name == "." {
                 return self.create(rest, ty);
             }
             if name == ".." {

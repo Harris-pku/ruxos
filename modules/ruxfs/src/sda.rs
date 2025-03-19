@@ -23,28 +23,29 @@ use alloc::vec;
 /// A exfat blk device `/dev/sda`.
 ///
 /// exfat block device
-pub struct ExFatDev {
+pub struct SdaDev {
     data: Mutex<Vec<u8>>,
+    // drvsdaops
 }
 
-impl ExFatDev {
+impl SdaDev {
     /// Create a new instance.
     pub fn new() -> Self {
-        debug!("exfat new here...");
+        info!("exfat new here...");
         Self {
             data: Mutex::new(vec![0; 1e8 as usize]),
         }
     }
 }
 
-impl VfsNodeOps for ExFatDev {
+impl VfsNodeOps for SdaDev {
     fn open(&self) -> VfsResult {
-        debug!("exfat open here...");
+        info!("exfat open here...");
         Ok(())
     }
 
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
-        debug!("exfat get_attr here...");
+        info!("exfat get_attr here...");
         Ok(VfsNodeAttr::new(
             VfsNodePerm::default_file(),
             VfsNodeType::CharDevice,
@@ -54,13 +55,13 @@ impl VfsNodeOps for ExFatDev {
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        debug!("exfat read buf len: {:?} at pos: {:?}", buf.len(), offset);
+        info!("exfat read buf len: {:?} at pos: {:?}", buf.len(), offset);
         
         Ok(buf.len())
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
-        debug!("exfat writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
+        info!("exfat writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
 
         Ok(buf.len())
     }
