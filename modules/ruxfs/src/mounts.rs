@@ -21,12 +21,14 @@ pub(crate) fn devfs() -> Arc<fs::devfs::DeviceFileSystem> {
     let random = fs::devfs::RandomDev;
     let urandom = fs::devfs::RandomDev;
     let fuse = crate::devfuse::FuseDev::new();
+    let sda = crate::sda::ExFatDev::new();
     let devfs = fs::devfs::DeviceFileSystem::new();
     devfs.add("null", Arc::new(null));
     devfs.add("zero", Arc::new(zero));
     devfs.add("random", Arc::new(random));
     devfs.add("urandom", Arc::new(urandom));
     devfs.add("fuse", Arc::new(fuse));
+    devfs.add("sda", Arc::new(sda));
     Arc::new(devfs)
 }
 

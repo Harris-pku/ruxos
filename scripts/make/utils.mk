@@ -18,6 +18,15 @@ define make_disk_image_fat32
   @mkfs.fat -F 32 $(1)
 endef
 
+define make_disk_image_exfat
+  @printf "    $(GREEN_C)Creating$(END_C) exFAT disk image \"$(1)\" ...\n"
+  @dd if=/dev/zero of=$(1) bs=1M count=64
+endef
+
 define make_disk_image
   $(if $(filter $(1),fat32), $(call make_disk_image_fat32,$(2)))
+endef
+
+define make_disk_image_exfat
+  $(if $(filter $(1),exfat), $(call make_disk_image_exfat,$(2)))
 endef

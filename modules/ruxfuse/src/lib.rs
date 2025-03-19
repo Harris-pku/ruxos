@@ -15,8 +15,6 @@
 extern crate log;
 extern crate alloc;
 
-use log::*;
-
 pub mod fuse;
 // pub mod devfuse;
 // pub mod fuse_st;

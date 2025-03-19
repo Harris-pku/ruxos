@@ -59,6 +59,7 @@ BUS ?= mmio
 RISCV_BIOS ?= default
 
 DISK_IMG ?= disk.img
+DISK_IMG_EXFAT ?= disk_exfat.img
 QEMU_LOG ?= n
 NET_DUMP ?= n
 NET_DEV ?= user

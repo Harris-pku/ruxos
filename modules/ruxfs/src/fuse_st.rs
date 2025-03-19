@@ -440,7 +440,7 @@ impl FuseAttr {
 	}
 
 	pub fn print(&self) {
-		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:#x}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
+		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:#x}, blksize: {:?}, flags: {:#x}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
@@ -465,7 +465,7 @@ impl FuseAttr {
 
 impl Debug for FuseAttr {
 	fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-		write!(f, "FuseAttr: {{ ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:?}, blksize: {:?}, flags: {:#x} }}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags)
+		write!(f, "FuseAttr: {{ ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:#x}, blksize: {:?}, flags: {:#x} }}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags)
 	}
 }
 
@@ -1134,7 +1134,7 @@ impl FuseMknodIn {
 	}
 
 	pub fn print(&self) {
-		info!("FuseMknodIn: mode: {:#x}, rdev: {:?}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
+		info!("FuseMknodIn: mode: {:#x}, rdev: {:#x}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
 	}
 
 	pub fn write_to(&self, buf: &mut [u8]) {
