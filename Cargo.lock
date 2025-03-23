@@ -1633,6 +1633,7 @@ dependencies = [
  "ruxnet",
  "ruxruntime",
  "ruxtask",
+ "ruxvda",
  "spinlock",
 ]
 
@@ -1887,6 +1888,7 @@ dependencies = [
  "ruxnet",
  "ruxrand",
  "ruxtask",
+ "ruxvda",
  "tty",
 ]
 
@@ -1919,6 +1921,29 @@ dependencies = [
  "spin 0.9.8",
  "spinlock",
  "timer_list",
+]
+
+[[package]]
+name = "ruxvda"
+version = "0.1.0"
+dependencies = [
+ "axalloc",
+ "axfs_devfs",
+ "axfs_ramfs",
+ "axfs_vfs",
+ "capability",
+ "cfg-if",
+ "crate_interface",
+ "driver_block",
+ "driver_common",
+ "lazy_init",
+ "log",
+ "memory_addr",
+ "ruxdriver",
+ "ruxfs",
+ "ruxtask",
+ "spin 0.9.8",
+ "spinlock",
 ]
 
 [[package]]

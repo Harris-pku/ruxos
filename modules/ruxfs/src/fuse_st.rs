@@ -439,6 +439,126 @@ impl FuseAttr {
 		self.mode
 	}
 
+	pub fn get_uid(&self) -> u32 {
+		self.uid
+	}
+
+	pub fn get_gid(&self) -> u32 {
+		self.gid
+	}
+
+	pub fn get_nlink(&self) -> u32 {
+		self.nlink
+	}
+
+	pub fn get_ino(&self) -> u64 {
+		self.ino
+	}
+
+	pub fn get_blocks(&self) -> u64 {
+		self.blocks
+	}
+
+	pub fn get_atime(&self) -> u64 {
+		self.atime
+	}
+
+	pub fn get_mtime(&self) -> u64 {
+		self.mtime
+	}
+
+	pub fn get_ctime(&self) -> u64 {
+		self.ctime
+	}
+
+	pub fn get_atimensec(&self) -> u32 {
+		self.atimensec
+	}
+
+	pub fn get_mtimensec(&self) -> u32 {
+		self.mtimensec
+	}
+
+	pub fn get_ctimensec(&self) -> u32 {
+		self.ctimensec
+	}
+
+	pub fn get_rdev(&self) -> u32 {
+		self.rdev
+	}
+
+	pub fn get_blksize(&self) -> u32 {
+		self.blksize
+	}
+
+	pub fn get_flags(&self) -> u32 {
+		self.flags
+	}
+
+	pub fn set_size(&mut self, size: u64) {
+		self.size = size;
+	}
+
+	pub fn set_mode(&mut self, mode: u32) {
+		self.mode = mode;
+	}
+
+	pub fn set_uid(&mut self, uid: u32) {
+		self.uid = uid;
+	}
+
+	pub fn set_gid(&mut self, gid: u32) {
+		self.gid = gid;
+	}
+
+	pub fn set_nlink(&mut self, nlink: u32) {
+		self.nlink = nlink;
+	}
+
+	pub fn set_ino(&mut self, ino: u64) {
+		self.ino = ino;
+	}
+
+	pub fn set_blocks(&mut self, blocks: u64) {
+		self.blocks = blocks;
+	}
+
+	pub fn set_atime(&mut self, atime: u64) {
+		self.atime = atime;
+	}
+
+	pub fn set_mtime(&mut self, mtime: u64) {
+		self.mtime = mtime;
+	}
+
+	pub fn set_ctime(&mut self, ctime: u64) {
+		self.ctime = ctime;
+	}
+
+	pub fn set_atimensec(&mut self, atimensec: u32) {
+		self.atimensec = atimensec;
+	}
+
+	pub fn set_mtimensec(&mut self, mtimensec: u32) {
+		self.mtimensec = mtimensec;
+	}
+
+	pub fn set_ctimensec(&mut self, ctimensec: u32) {
+		self.ctimensec = ctimensec;
+	}
+
+	pub fn set_rdev(&mut self, rdev: u32) {
+		self.rdev = rdev;
+	}
+
+	pub fn set_blksize(&mut self, blksize: u32) {
+		self.blksize = blksize;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseAttr: ino: {:?}, size: {:?}, blocks: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, nlink: {:?}, uid: {:?}, gid: {:?}, rdev: {:#x}, blksize: {:?}, flags: {:#x}", self.ino, self.size, self.blocks, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.nlink, self.uid, self.gid, self.rdev, self.blksize, self.flags);
 	}
@@ -549,6 +669,23 @@ impl FuseKstatfs {
 	}
 }
 
+impl Default for FuseKstatfs {
+	fn default() -> Self {
+		Self {
+			blocks: 0,
+			bfree: 0,
+			bavail: 0,
+			files: 0,
+			ffree: 0,
+			bsize: 0,
+			namelen: 0,
+			frsize: 0,
+			padding: 0,
+			spare: [0; 6],
+		}
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FuseFileLock { // 24 bytes
 	start: u64,
@@ -618,6 +755,17 @@ impl FuseAttrOut {
 
 	pub fn print(&self) {
 		info!("FuseAttrOut: attr_valid: {:?}, attr_valid_nsec: {:?}, dummy: {:?}, attr: {:?}", self.attr_valid, self.attr_valid_nsec, self.dummy, self.attr);
+	}
+}
+
+impl Default for FuseAttrOut {
+	fn default() -> Self {
+		Self {
+			attr_valid: 0,
+			attr_valid_nsec: 0,
+			dummy: 0,
+			attr: FuseAttr::default(),
+		}
 	}
 }
 
@@ -1038,6 +1186,14 @@ impl FuseStatfsOut {
 
 	pub fn print(&self) {
 		info!("FuseStatfsOut: st: {:?}", self.st);
+	}
+}
+
+impl Default for FuseStatfsOut {
+	fn default() -> Self {
+		Self {
+			st: FuseKstatfs::default(),
+		}
 	}
 }
 
@@ -1631,6 +1787,10 @@ impl FuseLseekOut {
 		Self {
 			offset: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
 		}
+	}
+
+	pub fn get_offset(&self) -> u64 {
+		self.offset
 	}
 
 	pub fn print(&self) {

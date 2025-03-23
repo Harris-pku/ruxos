@@ -42,7 +42,6 @@ pub mod root;
 // pub mod fuse;
 pub mod devfuse;
 pub mod fuse_st;
-pub mod sda;
 
 #[cfg(feature = "alloc")]
 mod arch;

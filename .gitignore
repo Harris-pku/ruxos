@@ -25,3 +25,4 @@ modules/ruxfuse/src/devfuse.rs
 modules/ruxfs/src/fuse.rs
 crates/axfs_devfs/src/fuse.rs
 crates/axfs_devfs/src/fuse_dev.rs
+modules/ruxfs/src/vda.rs

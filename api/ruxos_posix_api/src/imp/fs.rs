@@ -610,9 +610,9 @@ pub fn sys_mount(
         let f1 = MS_NODEV; //ctypes::MS_NODEV;
         let f2 = MS_NOSUID; //ctypes::MS_NOSUID;
         info!("mount flags: {:#x}, f1: {:#}, f2: {:#}, flag: {:#}", _mountflags, f1, f2, f1|f2);
-        if _mountflags != (f1 | f2).into() {
-            return Err(LinuxError::EINVAL);
-        }
+        // if _mountflags != (f1 | f2).into() {
+        //     return Err(LinuxError::EINVAL);
+        // }
         let target = char_ptr_to_str(_target)?;
         let target = String::from(target);
         let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
