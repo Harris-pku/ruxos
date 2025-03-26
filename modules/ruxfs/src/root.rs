@@ -77,16 +77,16 @@ impl RootDirectory {
         fs.mount(&path, self.main_fs.root_dir().lookup(&path)?)?;
         mounts.push(MountPoint::new(path, fs));
         // for mp in mounts.iter() {
-        //     info!("mounts_vec: {:?}", mp.path);
+        //     debug!("mounts_vec: {:?}", mp.path);
         // }
-        info!("mounts_vec last: {:?}", mounts.last().unwrap().path);
+        debug!("mounts_vec last: {:?}", mounts.last().unwrap().path);
         Ok(())
     }
 
     pub fn umount(&self, path: &str) -> AxResult {
         self.mounts_lock.lock().retain(|mp| mp.path != path);
         // for mp in self.mounts_lock.lock().iter() {
-        //     info!("after umount: mounts_vec: {:?}", mp.path);
+        //     debug!("after umount: mounts_vec: {:?}", mp.path);
         // }
         Ok(())
     }

@@ -19,8 +19,6 @@ mod dir;
 mod null;
 mod random;
 mod zero;
-// pub mod fuse;
-// pub mod fuse_dev;
 
 #[cfg(test)]
 mod tests;

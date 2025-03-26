@@ -24,7 +24,6 @@ use alloc::sync::Arc;
 use log::*;
 use ruxdriver::{prelude::*, AxDeviceContainer};
 use ruxfs::MountPoint;
-use spin::RwLock;
 
 pub fn init_vdafs(mut vda_devs: AxDeviceContainer<AxBlockDevice>) -> MountPoint {
     info!("Initialize VDA filesystem...");

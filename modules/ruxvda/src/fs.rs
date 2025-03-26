@@ -23,6 +23,8 @@ use ruxdriver::AxBlockDevice;
 use ruxdriver::prelude::BlockDriverOps;
 use spin::{once::Once, RwLock};
 
+const BLOCK_SIZE: usize = 512;
+
 /// A VDA filesystem that implements [`axfs_vfs::VfsOps`].
 pub struct VdaFileSystem {
     parent: Once<VfsNodeRef>,
@@ -41,8 +43,13 @@ impl VdaFileSystem {
 }
 
 impl VfsOps for VdaFileSystem {
-    fn mount(&self, _path: &str, _mountpoint: VfsNodeRef) -> VfsResult {
-        info!("Mount VDA filesystem");
+    fn mount(&self, path: &str, mount_point: VfsNodeRef) -> VfsResult {
+        debug!("Mount VDA filesystem, path: {:?}", path);
+        if let Some(parent) = mount_point.parent() {
+            self.root.set_parent(Some(self.parent.call_once(|| parent)));
+        } else {
+            self.root.set_parent(None);
+        }
         Ok(())
     }
 
@@ -67,6 +74,11 @@ impl VdaNode {
             transport: Arc::new(RwLock::new(dev)),
         })
     }
+
+    pub(super) fn set_parent(&self, parent: Option<&VfsNodeRef>) {
+        *self.parent.write() = parent.map_or(Weak::<Self>::new() as _, Arc::downgrade);
+    }
+
 }
 
 impl VfsNodeOps for VdaNode {
@@ -92,19 +104,63 @@ impl VfsNodeOps for VdaNode {
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        info!("Read VDA node offset: {:?}, buf: {:?}", offset, buf.len());
-
+        info!(
+            "Read VDA node offset: {:?}, % = {:?}, buf_len: {:?}, last: {:?}",
+            offset,
+            offset % BLOCK_SIZE as u64,
+            buf.len(),
+            (offset + buf.len() as u64) % BLOCK_SIZE as u64
+        );
+    
         let mut dev = self.transport.write();
-        let mut temp_buf = vec![0u8; 512];
-        let ret = dev.read_block(offset/512, &mut temp_buf);
-        buf.copy_from_slice(&temp_buf[(offset%512)  as usize..(offset%512 )as usize+buf.len()]);
+        let mut cur_offset = offset;
+        let mut pos = 0;
+        let mut remain = buf.len();
+        let mut temp_buf = vec![0u8; BLOCK_SIZE];
+    
+        while remain > 0 {
+            let ret = dev.read_block(cur_offset / 512, &mut temp_buf);
+    
+            let copy_len = remain.min(BLOCK_SIZE as usize);
+            let start = cur_offset as usize % 512;
+            let end = start + copy_len;
+    
+            buf[pos..pos + copy_len].copy_from_slice(&temp_buf[start..end]);
+    
+            info!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+    
+            cur_offset += copy_len as u64;
+            remain -= copy_len;
+            pos += copy_len;
+        }
 
+        if buf.len() == 4 {
+            // buf.fill(377);
+            info!("buf: {:?}", buf);
+        }
+    
         Ok(buf.len())
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
-        info!("Write VDA node");
         info!("Write VDA node offset: {:?}, buf: {:?}", offset, buf.len());
-        Ok(0)
+        // info!("buf: {:?}", buf);
+
+        let mut dev = self.transport.write();
+        let mut cur_offset = offset;
+        let mut pos = 0;
+        let mut remain = buf.len();
+
+        while remain > 0 {
+            let mut temp_buf = vec![0u8; BLOCK_SIZE];
+            let copy_len = remain.min(BLOCK_SIZE as usize);
+            temp_buf[(cur_offset as usize % BLOCK_SIZE)..(cur_offset as usize % BLOCK_SIZE) + copy_len].copy_from_slice(&buf[pos..pos+copy_len]);
+            let _ret = dev.write_block(cur_offset / BLOCK_SIZE as u64, &temp_buf);
+            cur_offset += copy_len as u64;
+            remain -= copy_len;
+            pos += copy_len;
+        }
+
+        Ok(buf.len())
     }
 }
