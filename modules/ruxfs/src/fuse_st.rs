@@ -745,6 +745,18 @@ impl FuseAttrOut {
 		}
 	}
 
+	pub fn get_attr_valid(&self) -> u64 {
+		self.attr_valid
+	}
+
+	pub fn get_attr_valid_nsec(&self) -> u32 {
+		self.attr_valid_nsec
+	}
+
+	pub fn get_dummy(&self) -> u32 {
+		self.dummy
+	}
+
 	pub fn get_attr(&self) -> FuseAttr {
 		self.attr
 	}

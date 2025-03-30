@@ -16,7 +16,7 @@
 use alloc::{sync::Arc, sync::Weak};
 use alloc::vec;
 use axfs_vfs::{
-    VfsNodeAttr, VfsNodeOps, VfsNodePerm, VfsNodeRef, VfsNodeType, VfsOps, VfsResult
+    VfsError, VfsNodeAttr, VfsNodeOps, VfsNodePerm, VfsNodeRef, VfsNodeType, VfsOps, VfsResult
 };
 use log::*;
 use ruxdriver::AxBlockDevice;
@@ -93,23 +93,19 @@ impl VfsNodeOps for VdaNode {
     }
 
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
-        info!("Get VDA node attributes");
+        debug!("Get VDA node attributes");
         Ok(VfsNodeAttr::new(
             VfsNodePerm::from_bits_truncate(0o777),
             VfsNodeType::BlockDevice,
             67108864,
             131072
         ))
-        // Ok(VfsNodeAttr::new_file(67108864, 131072))
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        info!(
+        debug!(
             "Read VDA node offset: {:?}, % = {:?}, buf_len: {:?}, last: {:?}",
-            offset,
-            offset % BLOCK_SIZE as u64,
-            buf.len(),
-            (offset + buf.len() as u64) % BLOCK_SIZE as u64
+            offset, offset % BLOCK_SIZE as u64, buf.len(), (offset + buf.len() as u64) % BLOCK_SIZE as u64
         );
     
         let mut dev = self.transport.write();
@@ -120,6 +116,9 @@ impl VfsNodeOps for VdaNode {
     
         while remain > 0 {
             let ret = dev.read_block(cur_offset / 512, &mut temp_buf);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
     
             let copy_len = remain.min(BLOCK_SIZE as usize);
             let start = cur_offset as usize % 512;
@@ -127,35 +126,38 @@ impl VfsNodeOps for VdaNode {
     
             buf[pos..pos + copy_len].copy_from_slice(&temp_buf[start..end]);
     
-            info!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
     
             cur_offset += copy_len as u64;
             remain -= copy_len;
             pos += copy_len;
-        }
-
-        if buf.len() == 4 {
-            // buf.fill(377);
-            info!("buf: {:?}", buf);
         }
     
         Ok(buf.len())
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
-        info!("Write VDA node offset: {:?}, buf: {:?}", offset, buf.len());
-        // info!("buf: {:?}", buf);
+        debug!("Write VDA node offset: {:?}, buf: {:?}", offset, buf.len());
 
         let mut dev = self.transport.write();
         let mut cur_offset = offset;
         let mut pos = 0;
         let mut remain = buf.len();
+        let mut temp_buf = vec![0u8; BLOCK_SIZE];
 
         while remain > 0 {
-            let mut temp_buf = vec![0u8; BLOCK_SIZE];
             let copy_len = remain.min(BLOCK_SIZE as usize);
-            temp_buf[(cur_offset as usize % BLOCK_SIZE)..(cur_offset as usize % BLOCK_SIZE) + copy_len].copy_from_slice(&buf[pos..pos+copy_len]);
-            let _ret = dev.write_block(cur_offset / BLOCK_SIZE as u64, &temp_buf);
+            let start = cur_offset as usize % 512;
+            let end = start + copy_len;
+
+            temp_buf[start..end].copy_from_slice(&buf[pos..pos + copy_len]);
+            let ret = dev.write_block(cur_offset / 512, &temp_buf);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
+    
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+
             cur_offset += copy_len as u64;
             remain -= copy_len;
             pos += copy_len;
