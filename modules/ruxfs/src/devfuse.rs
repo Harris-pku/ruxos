@@ -56,7 +56,7 @@ impl VfsNodeOps for FuseDev {
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        debug!("fuse_dev111 read buf len: {:?} at pos: {:?}", buf.len(), offset);
+        debug!("fuse_dev read buf len: {:?} at pos: {:?}", buf.len(), offset);
 
         let mut flag;
         let mut vec_len = 0;
@@ -94,7 +94,7 @@ impl VfsNodeOps for FuseDev {
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> VfsResult<usize> {
-        debug!("fuse_dev222 writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
+        debug!("fuse_dev writes buf len: {:?} at pos: {:?}, buf: {:?}", buf.len(), offset, buf);
 
         let mut flag;
 

@@ -148,7 +148,12 @@ pub(crate) fn mntfs() -> VfsResult<Arc<fs::ramfs::RamFileSystem>> {
 
     // Create /mnt/fuse
     mnt_root.create("fuse", VfsNodeType::Dir)?;
+
+    // Create /mnt/exfat
     mnt_root.create("exfat", VfsNodeType::Dir)?;
+
+    // Create /mnt/ext4
+    mnt_root.create("ext4", VfsNodeType::Dir)?;
 
     Ok(Arc::new(mntfs))
 }
