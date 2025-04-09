@@ -8,6 +8,7 @@
  */
 
 use core::ffi::{c_int, c_ulong};
+use alloc::string::String;
 
 use axerrno::LinuxError;
 
@@ -29,11 +30,50 @@ pub fn sys_arch_prctl(code: c_int, addr: c_ulong) -> c_int {
     })
 }
 
-/// TODO: fake implementation for prctl
-pub fn sys_prctl(op: c_int, arg0: c_ulong, arg1: c_ulong, arg2: c_ulong, arg3: c_ulong) -> c_int {
-    debug!(
-        "sys_prctl <= op: {}, arg0: {}, arg1: {}, arg2: {}, arg3: {}",
-        op, arg0, arg1, arg2, arg3
+/// Set process or thread attributes.
+pub fn sys_prctl(
+    option: c_int,
+    arg2: *mut c_int,
+    arg3: *mut c_int,
+    arg4: *mut c_int,
+    arg5: *mut c_int,
+) -> c_int {
+    warn!(
+        "sys_prctl <= option: {}, arg2: {:?}, arg3: {:?}, arg4: {:?}, arg5: {:?}",
+        option, arg2, arg3, arg4, arg5
     );
-    syscall_body!(sys_prctl, Ok(0))
+    syscall_body!(sys_prctl, {
+        match option {
+            3 => {
+                // PR_GET_DUMPABLE
+                warn!("PR_GET_DUMPABLE is set to: {}", 1);
+                Ok(1)
+            }
+            15 => {
+                // PR_SET_NAME
+                let name = unsafe { core::slice::from_raw_parts(arg2 as *const u8, 16) };
+                let name = String::from_utf8_lossy(name);
+                warn!("PR_SET_NAME is set to: {}", name);
+                // ruxtask::current().set_name(name.to_string());
+                Ok(0)
+            }
+            16 => {
+                // PR_GET_NAME
+                let name = String::from(ruxtask::current().name());
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        name.as_ptr(),
+                        arg2 as *mut u8,
+                        name.len().min(16),
+                    );
+                }
+                warn!("PR_GET_NAME is set to: {}", name);
+                Ok(0)
+            }
+            _ => {
+                warn!("PRCTL: {} is not supported", option);
+                Err(LinuxError::EINVAL)
+            }
+        }
+    })
 }

@@ -286,6 +286,15 @@ pub fn syscall(syscall_id: SyscallId, args: [usize; 6]) -> isize {
                     as _
             }
             SyscallId::UMASK => ruxos_posix_api::sys_umask(args[0] as ctypes::mode_t) as _,
+            SyscallId::PRCTL => {
+                ruxos_posix_api::sys_prctl(
+                    args[0] as c_int,
+                    args[1] as *mut c_int,
+                    args[2] as *mut c_int,
+                    args[3] as *mut c_int,
+                    args[4] as *mut c_int,
+                ) as _
+            }
             #[cfg(feature = "multitask")]
             SyscallId::GETPID => ruxos_posix_api::sys_getpid() as _,
             SyscallId::GETPPID => ruxos_posix_api::sys_getppid() as _,
