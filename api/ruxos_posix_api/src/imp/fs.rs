@@ -592,28 +592,29 @@ pub fn sys_umount2(target: *const c_char, flags: c_int) -> c_int {
 
 /// mount a filesystem at a specific location in the filesystem tree
 pub fn sys_mount(
-    _source: *const c_char,
-    _target: *const c_char,
-    _filesystemtype: *const c_char,
-    _mountflags: c_ulong,
-    _data: *const c_void,
+    source: *const c_char,
+    raw_target: *const c_char,
+    filesystemtype: *const c_char,
+    mountflags: c_ulong,
+    data: *const c_void,
 ) -> c_int {
     info!(
         "sys_mount <= source: {:?}, target: {:?}, filesystemtype: {:?}, mountflags: {:#x}, data: {:p}",
-        char_ptr_to_str(_source),
-        char_ptr_to_str(_target),
-        char_ptr_to_str(_filesystemtype),
-        _mountflags,
-        _data
+        char_ptr_to_str(source),
+        char_ptr_to_str(raw_target),
+        char_ptr_to_str(filesystemtype),
+        mountflags,
+        data
     );
     syscall_body!(sys_mount, {
         let f1 = MS_NODEV; //ctypes::MS_NODEV;
         let f2 = MS_NOSUID; //ctypes::MS_NOSUID;
-        info!("mount flags: {:#x}, f1: {:#}, f2: {:#}, flag: {:#}", _mountflags, f1, f2, f1|f2);
-        // if _mountflags != (f1 | f2).into() {
-        //     return Err(LinuxError::EINVAL);
-        // }
-        let target = char_ptr_to_str(_target)?;
+        info!("mount flags: {:#x}, f1: {:#x}, f2: {:#x}, flag: {:#x}", mountflags, f1, f2, f1|f2);
+        if mountflags != (f1 | f2).into() {
+            warn!("mount flags not supported: {:#x}", mountflags);
+        }
+
+        let target = char_ptr_to_str(raw_target)?;
         let target = String::from(target);
         let dir = ruxtask::current().fs.lock().as_mut().unwrap().root_dir.clone();
         // let mount_point = ruxfs::root::MountPoint::new(target1, ruxfs::fuse::fusefs());

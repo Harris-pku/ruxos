@@ -63,6 +63,7 @@ impl VfsNodeOps for FuseDev {
 
         unsafe {
             if FUSE_VEC.is_none() {
+                debug!("FUSE_VEC is none, create a new one at devfuse.");
                 FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
             }
 

@@ -177,6 +177,34 @@ impl FuseInHeader {
         }
     }
 
+	pub fn set_len(&mut self, len: u32) {
+		self.len = len;
+	}
+
+	pub fn set_opcode(&mut self, opcode: u32) {
+		self.opcode = opcode;
+	}
+
+	pub fn set_unique(&mut self, unique: u64) {
+		self.unique = unique;
+	}
+
+	pub fn set_nodeid(&mut self, nodeid: u64) {
+		self.nodeid = nodeid;
+	}
+
+	pub fn set_uid(&mut self, uid: u32) {
+		self.uid = uid;
+	}
+
+	pub fn set_gid(&mut self, gid: u32) {
+		self.gid = gid;
+	}
+
+	pub fn set_pid(&mut self, pid: u32) {
+		self.pid = pid;
+	}
+
 	pub fn print(&self) {
 		info!("FuseInHeader: len: {:?}, opcode: {:?}, unique: {:?}, nodeid: {:?}, uid: {:?}, gid: {:?}, pid: {:?}, padding: {:?}", self.len, self.opcode, self.unique, self.nodeid, self.uid, self.gid, self.pid, self.padding);
 	}
@@ -221,8 +249,16 @@ impl FuseOutHeader {
 		self.error == 0
 	}
 
+	pub fn get_len(&self) -> u32 {
+		self.len
+	}
+
 	pub fn error(&self) -> i32 {
 		self.error
+	}
+
+	pub fn get_unique(&self) -> u64 {
+		self.unique
 	}
 
 	pub fn print(&self) {
@@ -334,6 +370,50 @@ impl FuseInitOut {
 				u32::from_le_bytes(buf[60..64].try_into().unwrap()),
 			],
 		}
+	}
+
+	pub fn get_major(&self) -> u32 {
+		self.major
+	}
+
+	pub fn get_minor(&self) -> u32 {
+		self.minor
+	}
+
+	pub fn get_max_readahead(&self) -> u32 {
+		self.max_readahead
+	}
+
+	pub fn get_flags(&self) -> u32 {
+		self.flags
+	}
+
+	pub fn get_max_background(&self) -> u16 {
+		self.max_background
+	}
+
+	pub fn get_congestion_threshold(&self) -> u16 {
+		self.congestion_threshold
+	}
+
+	pub fn get_max_write(&self) -> u32 {
+		self.max_write
+	}
+
+	pub fn get_time_gran(&self) -> u32 {
+		self.time_gran
+	}
+
+	pub fn get_max_pages(&self) -> u16 {
+		self.max_pages
+	}
+
+	pub fn get_map_alignment(&self) -> u16 {
+		self.map_alignment
+	}
+
+	pub fn get_flags2(&self) -> u32 {
+		self.flags2
 	}
 
 	pub fn print(&self) {
@@ -822,8 +902,32 @@ impl FuseEntryOut {
 		self.nodeid
 	}
 
+	pub fn get_generation(&self) -> u64 {
+		self.generation
+	}
+
+	pub fn get_entry_valid(&self) -> u64 {
+		self.entry_valid
+	}
+
+	pub fn get_attr_valid(&self) -> u64 {
+		self.attr_valid
+	}
+
+	pub fn get_entry_valid_nsec(&self) -> u32 {
+		self.entry_valid_nsec
+	}
+
+	pub fn get_attr_valid_nsec(&self) -> u32 {
+		self.attr_valid_nsec
+	}
+
 	pub fn get_attr(&self) -> FuseAttr {
 		self.attr
+	}
+
+	pub fn get_nlink(&self) -> u32 {
+		self.attr.nlink
 	}
 
 	pub fn get_size(&self) -> u64 {
@@ -891,6 +995,58 @@ impl FuseSetattrIn {
 		}
 	}
 
+	pub fn set_valid(&mut self, valid: u32) {
+		self.valid = valid;
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_size(&mut self, size: u64) {
+		self.size = size;
+	}
+
+	pub fn set_lock_owner(&mut self, lock_owner: u64) {
+		self.lock_owner = lock_owner;
+	}
+
+	pub fn set_atime(&mut self, atime: u64) {
+		self.atime = atime;
+	}
+
+	pub fn set_mtime(&mut self, mtime: u64) {
+		self.mtime = mtime;
+	}
+
+	pub fn set_ctime(&mut self, ctime: u64) {
+		self.ctime = ctime;
+	}
+
+	pub fn set_atimensec(&mut self, atimensec: u32) {
+		self.atimensec = atimensec;
+	}
+
+	pub fn set_mtimensec(&mut self, mtimensec: u32) {
+		self.mtimensec = mtimensec;
+	}
+
+	pub fn set_ctimensec(&mut self, ctimensec: u32) {
+		self.ctimensec = ctimensec;
+	}
+
+	pub fn set_mode(&mut self, mode: u32) {
+		self.mode = mode;
+	}
+
+	pub fn set_uid(&mut self, uid: u32) {
+		self.uid = uid;
+	}
+
+	pub fn set_gid(&mut self, gid: u32) {
+		self.gid = gid;
+	}
+
 	pub fn print(&self) {
 		info!("FuseSetattrIn: valid: {:?}, padding: {:?}, fh: {:#x}, size: {:?}, lock_owner: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, atimensec: {:?}, mtimensec: {:?}, ctimensec: {:?}, mode: {:#x}, unused4: {:?}, uid: {:?}, gid: {:?}, unused5: {:?}", self.valid, self.padding, self.fh, self.size, self.lock_owner, self.atime, self.mtime, self.ctime, self.atimensec, self.mtimensec, self.ctimensec, self.mode, self.unused4, self.uid, self.gid, self.unused5);
 	}
@@ -929,6 +1085,14 @@ impl FuseOpenIn {
 		}
 	}
 
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_open_flags(&mut self, open_flags: u32) {
+		self.open_flags = open_flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseOpenIn: flags: {:#x}, open_flags: {:#x}", self.flags, self.open_flags);
 	}
@@ -965,6 +1129,10 @@ impl FuseOpenOut {
 
 	pub fn get_fh(&self) -> u64 {
 		self.fh
+	}
+
+	pub fn get_open_flags(&self) -> u32 {
+		self.open_flags
 	}
 
 	pub fn print(&self) {
@@ -1006,6 +1174,30 @@ impl FuseReadIn {
 		}
 	}
 
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_offset(&mut self, offset: u64) {
+		self.offset = offset;
+	}
+
+	pub fn set_size(&mut self, size: u32) {
+		self.size = size;
+	}
+
+	pub fn set_read_flags(&mut self, read_flags: u32) {
+		self.read_flags = read_flags;
+	}
+
+	pub fn set_lock_owner(&mut self, lock_owner: u64) {
+		self.lock_owner = lock_owner;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseReadIn: fh: {:#x}, offset: {:?}, size: {:?}, read_flags: {:#x}, lock_owner: {:?}, flags: {:#x}, padding: {:?}", self.fh, self.offset, self.size, self.read_flags, self.lock_owner, self.flags, self.padding);
 	}
@@ -1044,6 +1236,30 @@ impl FuseWriteIn {
 		}
 	}
 
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_offset(&mut self, offset: u64) {
+		self.offset = offset;
+	}
+
+	pub fn set_size(&mut self, size: u32) {
+		self.size = size;
+	}
+
+	pub fn set_write_flags(&mut self, write_flags: u32) {
+		self.write_flags = write_flags;
+	}
+
+	pub fn set_lock_owner(&mut self, lock_owner: u64) {
+		self.lock_owner = lock_owner;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseWriteIn: fh: {:#x}, offset: {:?}, size: {:?}, write_flags: {:#x}, lock_owner: {:?}, flags: {:#x}, padding: {:?}", self.fh, self.offset, self.size, self.write_flags, self.lock_owner, self.flags, self.padding);
 	}
@@ -1079,6 +1295,10 @@ impl FuseWriteOut {
 		}
 	}
 
+	pub fn get_size(&self) -> u32 {
+		self.size
+	}
+
 	pub fn print(&self) {
 		info!("FuseWriteOut: size: {:?}, padding: {:?}", self.size, self.padding);
 	}
@@ -1104,6 +1324,22 @@ impl FuseCreateIn {
 			umask,
 			open_flags,
 		}
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_mode(&mut self, mode: u32) {
+		self.mode = mode;
+	}
+
+	pub fn set_umask(&mut self, umask: u32) {
+		self.umask = umask;
+	}
+
+	pub fn set_open_flags(&mut self, open_flags: u32) {
+		self.open_flags = open_flags;
 	}
 
 	pub fn print(&self) {
@@ -1136,6 +1372,22 @@ impl FuseReleaseIn {
 		}
 	}
 
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_release_flags(&mut self, release_flags: u32) {
+		self.release_flags = release_flags;
+	}
+
+	pub fn set_lock_owner(&mut self, lock_owner: u64) {
+		self.lock_owner = lock_owner;
+	}
+
 	pub fn print(&self) {
 		info!("FuseReleaseIn: fh: {:#x}, flags: {:#x}, release_flags: {:#x}, lock_owner: {:?}", self.fh, self.flags, self.release_flags, self.lock_owner);
 	}
@@ -1164,6 +1416,14 @@ impl FuseFlushIn {
 			padding,
 			lock_owner,
 		}
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_lock_owner(&mut self, lock_owner: u64) {
+		self.lock_owner = lock_owner;
 	}
 
 	pub fn print(&self) {
@@ -1196,6 +1456,10 @@ impl FuseStatfsOut {
 		}
 	}
 
+	pub fn get_kstatfs(&self) -> FuseKstatfs {
+		self.st
+	}
+
 	pub fn print(&self) {
 		info!("FuseStatfsOut: st: {:?}", self.st);
 	}
@@ -1221,6 +1485,10 @@ impl FuseForgetIn {
 		}
 	}
 
+	pub fn set_nlookup(&mut self, nlookup: u64) {
+		self.nlookup = nlookup;
+	}
+
 	pub fn print(&self) {
 		info!("FuseForgetIn: nlookup: {:?}", self.nlookup);
 	}
@@ -1243,6 +1511,14 @@ impl FuseForgetOne {
 			nodeid,
 			nlookup,
 		}
+	}
+
+	pub fn set_nodeid(&mut self, nodeid: u64) {
+		self.nodeid = nodeid;
+	}
+
+	pub fn set_nlookup(&mut self, nlookup: u64) {
+		self.nlookup = nlookup;
 	}
 
 	pub fn read_from(buf: &[u8]) -> Self {
@@ -1270,6 +1546,10 @@ impl FuseBatchForgetIn {
 			count,
 			dummy: 0,
 		}
+	}
+
+	pub fn set_count(&mut self, count: u32) {
+		self.count = count;
 	}
 
 	pub fn print(&self) {
@@ -1301,6 +1581,18 @@ impl FuseMknodIn {
 		}
 	}
 
+	pub fn set_mode(&mut self, mode: u32) {
+		self.mode = mode;
+	}
+
+	pub fn set_rdev(&mut self, rdev: u32) {
+		self.rdev = rdev;
+	}
+
+	pub fn set_umask(&mut self, umask: u32) {
+		self.umask = umask;
+	}
+
 	pub fn print(&self) {
 		info!("FuseMknodIn: mode: {:#x}, rdev: {:#x}, umask: {:?}, padding: {:?}", self.mode, self.rdev, self.umask, self.padding);
 	}
@@ -1328,6 +1620,14 @@ impl FuseMkdirIn {
 		}
 	}
 
+	pub fn set_mode(&mut self, mode: u32) {
+		self.mode = mode;
+	}
+
+	pub fn set_umask(&mut self, umask: u32) {
+		self.umask = umask;
+	}
+
 	pub fn print(&self) {
 		info!("FuseMkdirIn: mode: {:#x}, umask: {:?}", self.mode, self.umask);
 	}
@@ -1349,6 +1649,10 @@ impl FuseRenameIn {
 		Self {
 			newdir,
 		}
+	}
+
+	pub fn set_newdir(&mut self, newdir: u64) {
+		self.newdir = newdir;
 	}
 
 	pub fn print(&self) {
@@ -1377,6 +1681,14 @@ impl FuseRename2In {
 		}
 	}
 
+	pub fn set_newdir(&mut self, newdir: u64) {
+		self.newdir = newdir;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseRename2In: newdir: {:?}, flags: {:#x}, padding: {:?}", self.newdir, self.flags, self.padding);
 	}
@@ -1399,6 +1711,10 @@ impl FuseLinkIn {
 		Self {
 			oldnodeid,
 		}
+	}
+
+	pub fn set_oldnodeid(&mut self, oldnodeid: u64) {
+		self.oldnodeid = oldnodeid;
 	}
 
 	pub fn print(&self) {
@@ -1429,6 +1745,18 @@ impl FuseSetxattrIn {
 		}
 	}
 
+	pub fn set_size(&mut self, size: u32) {
+		self.size = size;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_setxattr_flags(&mut self, setxattr_flags: u32) {
+		self.setxattr_flags = setxattr_flags;
+	}
+
 	pub fn print(&self) {
 		info!("FuseSetxattrIn: size: {:?}, flags: {:#x}, setxattr_flags: {:#x}, padding: {:?}", self.size, self.flags, self.setxattr_flags, self.padding);
 	}
@@ -1456,6 +1784,10 @@ impl FuseGetxattrIn {
 		}
 	}
 
+	pub fn set_size(&mut self, size: u32) {
+		self.size = size;
+	}
+
 	pub fn print(&self) {
 		info!("FuseGetxattrIn: size: {:?}, padding: {:?}", self.size, self.padding);
 	}
@@ -1479,6 +1811,10 @@ impl FuseGetxattrOut {
 			size,
 			padding: 0,
 		}
+	}
+
+	pub fn get_size(&self) -> u32 {
+		self.size
 	}
 
 	pub fn read_from(buf: &[u8]) -> Self {
@@ -1508,6 +1844,10 @@ impl FuseAccessIn {
 		}
 	}
 
+	pub fn set_mask(&mut self, mask: u32) {
+		self.mask = mask;
+	}
+
 	pub fn print(&self) {
 		info!("FuseAccessIn: mask: {:?}, padding: {:?}", self.mask, self.padding);
 	}
@@ -1533,6 +1873,14 @@ impl FuseFsyncIn {
 			fsync_flags,
 			padding: 0,
 		}
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_fsync_flags(&mut self, fsync_flags: u32) {
+		self.fsync_flags = fsync_flags;
 	}
 
 	pub fn print(&self) {
@@ -1561,6 +1909,14 @@ impl FuseBmapIn {
 			blocksize,
 			padding: 0,
 		}
+	}
+
+	pub fn set_block(&mut self, block: u64) {
+		self.block = block;
+	}
+
+	pub fn set_blocksize(&mut self, blocksize: u32) {
+		self.blocksize = blocksize;
 	}
 
 	pub fn print(&self) {
@@ -1593,6 +1949,10 @@ impl FuseBmapOut {
 		}
 	}
 
+	pub fn get_block(&self) -> u64 {
+		self.block
+	}
+
 	pub fn print(&self) {
 		info!("FuseBmapOut: block: {:?}", self.block);
 	}
@@ -1619,6 +1979,30 @@ impl FuseIoctlIn {
 			in_size,
 			out_size,
 		}
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_cmd(&mut self, cmd: u32) {
+		self.cmd = cmd;
+	}
+
+	pub fn set_arg(&mut self, arg: u64) {
+		self.arg = arg;
+	}
+
+	pub fn set_in_size(&mut self, in_size: u32) {
+		self.in_size = in_size;
+	}
+
+	pub fn set_out_size(&mut self, out_size: u32) {
+		self.out_size = out_size;
 	}
 
 	pub fn print(&self) {
@@ -1657,6 +2041,14 @@ impl FuseIoctlIovec {
 		}
 	}
 
+	pub fn get_base(&self) -> u64 {
+		self.base
+	}
+
+	pub fn get_len(&self) -> u64 {
+		self.len
+	}
+
 	pub fn print(&self) {
 		info!("FuseIoctlIovec: base: {:?}, len: {:?}", self.base, self.len);
 	}
@@ -1689,6 +2081,22 @@ impl FuseIoctlOut {
 		}
 	}
 
+	pub fn get_result(&self) -> i32 {
+		self.result
+	}
+
+	pub fn get_flags(&self) -> u32 {
+		self.flags
+	}
+
+	pub fn get_in_iovs(&self) -> u32 {
+		self.in_iovs
+	}
+
+	pub fn get_out_iovs(&self) -> u32 {
+		self.out_iovs
+	}
+
 	pub fn print(&self) {
 		info!("FuseIoctlOut: result: {:?}, flags: {:#x}, in_iovs: {:?}, out_iovs: {:?}", self.result, self.flags, self.in_iovs, self.out_iovs);
 	}
@@ -1711,6 +2119,22 @@ impl FusePollIn {
 			flags,
 			events,
 		}
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_kh(&mut self, kh: u64) {
+		self.kh = kh;
+	}
+
+	pub fn set_flags(&mut self, flags: u32) {
+		self.flags = flags;
+	}
+
+	pub fn set_events(&mut self, events: u32) {
+		self.events = events;
 	}
 
 	pub fn print(&self) {
@@ -1747,6 +2171,10 @@ impl FusePollOut {
 		}
 	}
 
+	pub fn get_revents(&self) -> u32 {
+		self.revents
+	}
+
 	pub fn print(&self) {
 		info!("FusePollOut: revents: {:?}, padding: {:?}", self.revents, self.padding);
 	}
@@ -1768,6 +2196,18 @@ impl FuseLseekIn {
 			whence,
 			padding: 0,
 		}
+	}
+
+	pub fn set_fh(&mut self, fh: u64) {
+		self.fh = fh;
+	}
+
+	pub fn set_offset(&mut self, offset: u64) {
+		self.offset = offset;
+	}
+
+	pub fn set_whence(&mut self, whence: u32) {
+		self.whence = whence;
 	}
 
 	pub fn print(&self) {
@@ -1846,12 +2286,24 @@ impl FuseDirent {
 		}
 	}
 
-	pub fn get_name(&self) -> String {
-		self.name.clone()
+	pub fn get_ino(&self) -> u64 {
+		self.ino
+	}
+
+	pub fn get_off(&self) -> u64 {
+		self.off
+	}
+
+	pub fn get_namelen(&self) -> u32 {
+		self.namelen
 	}
 
 	pub fn get_type(&self) -> u32 {
 		self.type_
+	}
+
+	pub fn get_name(&self) -> String {
+		self.name.clone()
 	}
 	
 	pub fn get_type_as_vfsnodetype(&self) -> VfsNodeType {

@@ -15,7 +15,6 @@
 extern crate log;
 extern crate alloc;
 
-// pub mod drv;
 pub mod fs;
 
 // use alloc::vec::Vec;

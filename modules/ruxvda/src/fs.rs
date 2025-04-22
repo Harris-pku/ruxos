@@ -113,25 +113,69 @@ impl VfsNodeOps for VdaNode {
         let mut pos = 0;
         let mut remain = buf.len();
         let mut temp_buf = vec![0u8; BLOCK_SIZE];
-    
-        while remain > 0 {
+
+        // Read the first block
+        if offset % BLOCK_SIZE as u64 != 0 || remain < BLOCK_SIZE {
+            let start = cur_offset as usize % 512;
+            let end = BLOCK_SIZE.min(start + remain);
+            let copy_len = end - start;
             let ret = dev.read_block(cur_offset / 512, &mut temp_buf);
             if ret.is_err() {
                 return Err(VfsError::PermissionDenied);
             }
-    
-            let copy_len = remain.min(BLOCK_SIZE as usize);
-            let start = cur_offset as usize % 512;
-            let end = start + copy_len;
-    
             buf[pos..pos + copy_len].copy_from_slice(&temp_buf[start..end]);
-    
             debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
-    
             cur_offset += copy_len as u64;
             remain -= copy_len;
             pos += copy_len;
         }
+
+        // Read the whole block
+        while remain >= BLOCK_SIZE {
+            debug!("cur_offset: {:?}, cur_offset % 512 = {:?} = 0!!!", cur_offset, cur_offset % 512);
+            let ret = dev.read_block(cur_offset / 512, &mut buf[pos..pos + BLOCK_SIZE]);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", BLOCK_SIZE, cur_offset, pos, remain);
+            cur_offset += BLOCK_SIZE as u64;
+            remain -= BLOCK_SIZE;
+            pos += BLOCK_SIZE;
+        }
+
+        // Read the last block
+        if remain > 0 {
+            debug!("cur_offset: {:?}, cur_offset % 512 = {:?} = 0!!!", cur_offset, cur_offset % 512);
+            let start = cur_offset as usize % 512;
+            let copy_len = remain.min(BLOCK_SIZE as usize);
+            let end = start + copy_len;
+            let ret = dev.read_block(cur_offset / 512, &mut temp_buf);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
+            buf[pos..pos + copy_len].copy_from_slice(&temp_buf[start..end]);
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+            cur_offset += copy_len as u64;
+            remain -= copy_len;
+            pos += copy_len;
+        }
+
+        debug!("cur_offset - offset - buf.len() = {:?} = 0!!, remain: {:?} = 0!!, pos - buf.len() =  {:?} = 0!!", cur_offset - offset - buf.len() as u64, remain, pos - buf.len());
+    
+        // while remain > 0 {
+        //     let ret = dev.read_block(cur_offset / 512, &mut temp_buf);
+        //     if ret.is_err() {
+        //         return Err(VfsError::PermissionDenied);
+        //     }
+        //     let copy_len = remain.min(BLOCK_SIZE as usize);
+        //     let start = cur_offset as usize % 512;
+        //     let end = start + copy_len;
+        //     buf[pos..pos + copy_len].copy_from_slice(&temp_buf[start..end]);
+        //     debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+        //     cur_offset += copy_len as u64;
+        //     remain -= copy_len;
+        //     pos += copy_len;
+        // }
     
         Ok(buf.len())
     }
@@ -145,23 +189,70 @@ impl VfsNodeOps for VdaNode {
         let mut remain = buf.len();
         let mut temp_buf = vec![0u8; BLOCK_SIZE];
 
-        while remain > 0 {
-            let copy_len = remain.min(BLOCK_SIZE as usize);
+        // Write the first block
+        if offset % BLOCK_SIZE as u64 != 0 || remain < BLOCK_SIZE {
             let start = cur_offset as usize % 512;
-            let end = start + copy_len;
-
+            let end = BLOCK_SIZE.min(start + remain);
+            let copy_len = end - start;
+            // let copy_len = remain.min(BLOCK_SIZE as usize);
+            // let end = start + copy_len;
             temp_buf[start..end].copy_from_slice(&buf[pos..pos + copy_len]);
             let ret = dev.write_block(cur_offset / 512, &temp_buf);
             if ret.is_err() {
                 return Err(VfsError::PermissionDenied);
             }
-    
             debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
-
             cur_offset += copy_len as u64;
             remain -= copy_len;
             pos += copy_len;
         }
+
+        // Write the whole block
+        while remain >= BLOCK_SIZE {
+            debug!("cur_offset: {:?}, cur_offset % 512 = {:?} = 0!!!", cur_offset, cur_offset % 512);
+            let ret = dev.write_block(cur_offset / 512, &buf[pos..pos + BLOCK_SIZE]);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", BLOCK_SIZE, cur_offset, pos, remain);
+            cur_offset += BLOCK_SIZE as u64;
+            remain -= BLOCK_SIZE;
+            pos += BLOCK_SIZE;
+        }
+
+        // Write the last block
+        if remain > 0 {
+            debug!("cur_offset: {:?}, cur_offset % 512 = {:?} = 0!!!", cur_offset, cur_offset % 512);
+            let start = cur_offset as usize % 512;
+            let copy_len = remain.min(BLOCK_SIZE as usize);
+            let end = start + copy_len;
+            temp_buf[start..end].copy_from_slice(&buf[pos..pos + copy_len]);
+            let ret = dev.write_block(cur_offset / 512, &temp_buf);
+            if ret.is_err() {
+                return Err(VfsError::PermissionDenied);
+            }
+            debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+            cur_offset += copy_len as u64;
+            remain -= copy_len;
+            pos += copy_len;
+        }
+
+        debug!("cur_offset - offset - buf.len() = {:?} = 0!!, remain: {:?} = 0!!, pos - buf.len() =  {:?} = 0!!", cur_offset - offset - buf.len() as u64, remain, pos - buf.len());
+
+        // while remain > 0 {
+        //     let copy_len = remain.min(BLOCK_SIZE as usize);
+        //     let start = cur_offset as usize % 512;
+        //     let end = start + copy_len;
+        //     temp_buf[start..end].copy_from_slice(&buf[pos..pos + copy_len]);
+        //     let ret = dev.write_block(cur_offset / 512, &temp_buf);
+        //     if ret.is_err() {
+        //         return Err(VfsError::PermissionDenied);
+        //     }
+        //     debug!("copy_len: {:?}, cur_offset: {:?}, pos: {:?}, remain: {:?}", copy_len, cur_offset, pos, remain);
+        //     cur_offset += copy_len as u64;
+        //     remain -= copy_len;
+        //     pos += copy_len;
+        // }
 
         Ok(buf.len())
     }
