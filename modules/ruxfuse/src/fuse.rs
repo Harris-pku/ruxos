@@ -14,7 +14,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use ruxtask::{current, WaitQueue};
 use spinlock::SpinNoIrq;
-use core::sync::atomic::{AtomicI32, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use log::*;
 
 use axfs_vfs::{VfsDirEntry, VfsError, VfsResult};
@@ -28,8 +28,9 @@ use ruxfs::fuse_st::{
 };
 use ruxfs::devfuse::{FUSEFLAG, FUSE_VEC};
 
-pub static mut UNIQUE_ID: u64 = 0;
-pub static mut NEWID: i64 = -1;
+// pub static mut UNIQUE_ID: u64 = 0;
+pub static UNIQUE_ID: AtomicU64 = AtomicU64::new(0);
+pub static NEWID: AtomicI32 = AtomicI32::new(-1);
 pub static INITFLAG: AtomicI32 = AtomicI32::new(1);
 pub static WQ: WaitQueue = WaitQueue::new();
 
@@ -241,8 +242,12 @@ impl FuseNode {
         let f1 = INITFLAG.load(Ordering::SeqCst);
         if f1 == 1 {
             INITFLAG.store(0, Ordering::Relaxed);
+            UNIQUE_ID.store(0, Ordering::Relaxed);
             unsafe {
-                UNIQUE_ID = 0;
+                if FUSE_VEC.is_none() {
+                    debug!("FUSE_VEC is none, create a new one at FUSE_INIT.");
+                    FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
+                }
             }
             self.init();
         }
@@ -252,24 +257,20 @@ impl FuseNode {
     pub fn init(&self) {
         info!("\nNEW FUSE REQUEST:\n  fuse_node INIT({:?}) here...", FuseOpcode::FuseInit as u32);
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        info!("pid = {:?}, inode = {:?}", pid, nodeid);
+        let fusein = FuseInHeader::new(104, FuseOpcode::FuseInit as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 104];
+        fusein.write_to(&mut fusebuf);
+        let initin = FuseInitIn::new(7, 38, 0x00020000, 0x33fffffb, 0, [0; 11]);
+        initin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        initin.print();
+
         unsafe {
-            if FUSE_VEC.is_none() {
-                info!("FUSE_VEC is none, create a new one at FUSE_INIT.");
-                FUSE_VEC = Some(Arc::new(SpinNoIrq::new(Vec::new())));
-            }
-
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            info!("pid = {:?}, inode = {:?}", pid, nodeid);
-            let fusein = FuseInHeader::new(104, FuseOpcode::FuseInit as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 104];
-            fusein.write_to(&mut fusebuf);
-            let initin = FuseInitIn::new(7, 38, 0x00020000, 0x33fffffb, 0, [0; 11]);
-            initin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            initin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -333,20 +334,21 @@ impl FuseNode {
         let lookup_error;
         let mut entryout = FuseEntryOut::default();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let path_len = path.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(41 + path_len as u32, FuseOpcode::FuseLookup as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf[0..40]);
+        fusebuf[40..40+path_len].copy_from_slice(path.as_bytes());
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let path_len = path.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(41 + path_len as u32, FuseOpcode::FuseLookup as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf[0..40]);
-            fusebuf[40..40+path_len].copy_from_slice(path.as_bytes());
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -429,21 +431,22 @@ impl FuseNode {
         let opendir_error;
         let mut opendirout = FuseOpenOut::default();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpendir as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 48];
+        fusein.write_to(&mut fusebuf);
+        let openin = FuseOpenIn::new(0x18800, 0);
+        openin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        openin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpendir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 48];
-            fusein.write_to(&mut fusebuf);
-            let openin = FuseOpenIn::new(0x18800, 0);
-            openin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            openin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -512,21 +515,22 @@ impl FuseNode {
 
         let releasedir_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(64, FuseOpcode::FuseReleasedir as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 64];
+        fusein.write_to(&mut fusebuf);
+        let releasein = FuseReleaseIn::new(fh, 0x18800, 0, 0);
+        releasein.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        releasein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseReleasedir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 64];
-            fusein.write_to(&mut fusebuf);
-            let releasein = FuseReleaseIn::new(fh, 0x18800, 0, 0);
-            releasein.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            releasein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -586,21 +590,22 @@ impl FuseNode {
 
         let forget_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(48, FuseOpcode::FuseForget as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 48];
+        fusein.write_to(&mut fusebuf);
+        let forgetin = FuseForgetIn::new(4);
+        forgetin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        forgetin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseForget as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 48];
-            fusein.write_to(&mut fusebuf);
-            let forgetin = FuseForgetIn::new(4);
-            forgetin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            forgetin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -660,51 +665,52 @@ impl FuseNode {
         let setattr_error;
         let mut attrout = FuseAttrOut::default();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(128, FuseOpcode::FuseSetattr as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 128];
+        fusein.write_to(&mut fusebuf);
+        let mut attrin = FuseAttr::default();
+        if to_set & 0x1 != 0 {
+            attrin.set_mode(attr.get_mode());
+        }
+        if to_set & 0x2 != 0 {
+            attrin.set_uid(attr.get_uid());
+        }
+        if to_set & 0x4 != 0 {
+            attrin.set_gid(attr.get_gid());
+        }
+        if to_set & 0x8 != 0 {
+            attrin.set_size(attr.get_size());
+        }
+        if to_set & 0x10 != 0 {
+            attrin.set_atime(attr.get_atime());
+        }
+        if to_set & 0x20 != 0 {
+            attrin.set_mtime(attr.get_mtime());
+        }
+        if to_set & 0x40 != 0 {
+            attrin.set_ctime(attr.get_ctime());
+        }
+        if to_set & 0x80 != 0 {
+            attrin.set_atimensec(attr.get_atimensec());
+        }
+        if to_set & 0x100 != 0 {
+            attrin.set_mtimensec(attr.get_mtimensec());
+        }
+        if to_set & 0x200 != 0 {
+            attrin.set_ctimensec(attr.get_ctimensec());
+        }
+        attrin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        attrin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(128, FuseOpcode::FuseSetattr as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 128];
-            fusein.write_to(&mut fusebuf);
-            let mut attrin = FuseAttr::default();
-            if to_set & 0x1 != 0 {
-                attrin.set_mode(attr.get_mode());
-            }
-            if to_set & 0x2 != 0 {
-                attrin.set_uid(attr.get_uid());
-            }
-            if to_set & 0x4 != 0 {
-                attrin.set_gid(attr.get_gid());
-            }
-            if to_set & 0x8 != 0 {
-                attrin.set_size(attr.get_size());
-            }
-            if to_set & 0x10 != 0 {
-                attrin.set_atime(attr.get_atime());
-            }
-            if to_set & 0x20 != 0 {
-                attrin.set_mtime(attr.get_mtime());
-            }
-            if to_set & 0x40 != 0 {
-                attrin.set_ctime(attr.get_ctime());
-            }
-            if to_set & 0x80 != 0 {
-                attrin.set_atimensec(attr.get_atimensec());
-            }
-            if to_set & 0x100 != 0 {
-                attrin.set_mtimensec(attr.get_mtimensec());
-            }
-            if to_set & 0x200 != 0 {
-                attrin.set_ctimensec(attr.get_ctimensec());
-            }
-            attrin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            attrin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -772,18 +778,19 @@ impl FuseNode {
         let readlink_error;
         let mut readlinkout = String::new();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(40, FuseOpcode::FuseReadlink as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 40];
+        fusein.write_to(&mut fusebuf);
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseReadlink as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 40];
-            fusein.write_to(&mut fusebuf);
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -845,22 +852,23 @@ impl FuseNode {
         let symlink_error;
         let symlinkout;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let name_len = name.len();
+        let link_len = link.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(42 + (name_len + link_len) as u32, FuseOpcode::FuseSymlink as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 280];
+        fusein.write_to(&mut fusebuf);
+        fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
+        fusebuf[41 + name_len..41 + name_len + link_len].copy_from_slice(link.as_bytes());
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let name_len = name.len();
-            let link_len = link.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(42 + (name_len + link_len) as u32, FuseOpcode::FuseSymlink as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 280];
-            fusein.write_to(&mut fusebuf);
-            fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
-            fusebuf[41 + name_len..41 + name_len + link_len].copy_from_slice(link.as_bytes());
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -933,37 +941,38 @@ impl FuseNode {
         let mknod_error;
         let mknodout;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let name_len = name.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(57 + name_len as u32, FuseOpcode::FuseMknod as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf);
+
+        // char c 10 0:     mode: 0x21a4, rdev: 0xa00, umask: 18
+        // block b 8 0:     mode: 0x61a4, rdev: 0x800, umask: 18
+        // fifo p:          mode: 0x11a4, rdev: 0x0, umask: 18
+        // socket s
+        // rdev = majonr << 8 | minor
+        let mode = match ty {
+            VfsNodeType::Fifo => 0x11a4,
+            VfsNodeType::CharDevice => 0x21a4,
+            VfsNodeType::BlockDevice => 0x61a4,
+            VfsNodeType::Socket => 0x81a4,
+            _ => 0x21a4,
+        };
+        let rdev = 0xa00; // major << 8 | minor;
+        let mknodin = FuseMknodIn::new(mode, rdev, 18);
+        mknodin.write_to(&mut fusebuf[40..]);
+        fusebuf[56..56 + name_len].copy_from_slice(name.as_bytes());
+        fusein.print();
+        mknodin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let name_len = name.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(57 + name_len as u32, FuseOpcode::FuseMknod as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
-
-            // char c 10 0:     mode: 0x21a4, rdev: 0xa00, umask: 18
-            // block b 8 0:     mode: 0x61a4, rdev: 0x800, umask: 18
-            // fifo p:          mode: 0x11a4, rdev: 0x0, umask: 18
-            // socket s
-            // rdev = majonr << 8 | minor
-            let mode = match ty {
-                VfsNodeType::Fifo => 0x11a4,
-                VfsNodeType::CharDevice => 0x21a4,
-                VfsNodeType::BlockDevice => 0x61a4,
-                VfsNodeType::Socket => 0x81a4,
-                _ => 0x21a4,
-            };
-            let rdev = 0xa00; // major << 8 | minor;
-            let mknodin = FuseMknodIn::new(mode, rdev, 18);
-            mknodin.write_to(&mut fusebuf[40..]);
-            fusebuf[56..56 + name_len].copy_from_slice(name.as_bytes());
-            fusein.print();
-            mknodin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1025,23 +1034,24 @@ impl FuseNode {
         let mkdir_error;
         let mkdirout;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let name_len = name.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(49 + name_len as u32, FuseOpcode::FuseMkdir as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf);
+        let mkdirin = FuseMkdirIn::new(0x1ff, 18); // 0x1ed => 0755
+        mkdirin.write_to(&mut fusebuf[40..]);
+        fusebuf[48..48 + name_len].copy_from_slice(name.as_bytes());
+        fusein.print();
+        mkdirin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let name_len = name.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(49 + name_len as u32, FuseOpcode::FuseMkdir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
-            let mkdirin = FuseMkdirIn::new(0x1ff, 18); // 0x1ed => 0755
-            mkdirin.write_to(&mut fusebuf[40..]);
-            fusebuf[48..48 + name_len].copy_from_slice(name.as_bytes());
-            fusein.print();
-            mkdirin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1128,20 +1138,21 @@ impl FuseNode {
 
         let rmdir_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let name_len = name.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(41 + name_len as u32, FuseOpcode::FuseRmdir as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf);
+        fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let name_len = name.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(41 + name_len as u32, FuseOpcode::FuseRmdir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
-            fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1204,20 +1215,21 @@ impl FuseNode {
 
         let unlink_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let name_len = name.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(41 + name_len as u32, FuseOpcode::FuseUnlink as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf);
+        fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let name_len = name.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(41 + name_len as u32, FuseOpcode::FuseUnlink as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
-            fusebuf[40..40 + name_len].copy_from_slice(name.as_bytes());
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1279,26 +1291,27 @@ impl FuseNode {
         let read_error;
         let mut outlen = 0;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+
+        let fusein = FuseInHeader::new(80, FuseOpcode::FuseRead as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 80];
+        fusein.write_to(&mut fusebuf);
+
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+        let mut flags_guard = self.flags.lock();
+        let readflags = &mut *flags_guard;
+        *readflags = 0x8002;
+        let readsize = buf.len().min(4096) as u32;
+        let readin = FuseReadIn::new(fh, offset, readsize, 0, 0, 0x8002);
+        readin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        readin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-
-            let fusein = FuseInHeader::new(80, FuseOpcode::FuseRead as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 80];
-            fusein.write_to(&mut fusebuf);
-
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-            let mut flags_guard = self.flags.lock();
-            let readflags = &mut *flags_guard;
-            *readflags = 0x8002;
-            let readsize = buf.len().min(65536) as u32;
-            let readin = FuseReadIn::new(fh, offset, readsize, 0, 0, 0x8002);
-            readin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            readin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1364,18 +1377,19 @@ impl FuseNode {
         let statfs_error;
         let mut statfsout = FuseStatfsOut::default();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(40, FuseOpcode::FuseStatfs as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 40];
+        fusein.write_to(&mut fusebuf);
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseStatfs as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 40];
-            fusein.write_to(&mut fusebuf);
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1436,21 +1450,22 @@ impl FuseNode {
 
         let flush_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(64, FuseOpcode::FuseFlush as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 64];
+        fusein.write_to(&mut fusebuf);
+        let flushin = FuseFlushIn::new(fh, 0, 0, 0);
+        flushin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        flushin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseFlush as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 64];
-            fusein.write_to(&mut fusebuf);
-            let flushin = FuseFlushIn::new(fh, 0, 0, 0);
-            flushin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            flushin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1509,21 +1524,22 @@ impl FuseNode {
 
         let access_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(48, FuseOpcode::FuseAccess as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 48];
+        fusein.write_to(&mut fusebuf);
+        let accessin = FuseAccessIn::new(1);
+        accessin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        accessin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseAccess as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 48];
-            fusein.write_to(&mut fusebuf);
-            let accessin = FuseAccessIn::new(1);
-            accessin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            accessin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1583,25 +1599,26 @@ impl FuseNode {
 
         let rename_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let old_len = old.len();
+        let new_len = new.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(58 + (old_len + new_len) as u32, FuseOpcode::FuseRename2 as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 280];
+        fusein.write_to(&mut fusebuf);
+        let rename2in = FuseRename2In::new(1, 1);
+        rename2in.write_to(&mut fusebuf[40..]);
+        fusebuf[56..56 + old_len].copy_from_slice(old.as_bytes());
+        fusebuf[57 + old_len..57 + old_len + new_len].copy_from_slice(new.as_bytes());
+        fusein.print();
+        rename2in.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let old_len = old.len();
-            let new_len = new.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(58 + (old_len + new_len) as u32, FuseOpcode::FuseRename2 as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 280];
-            fusein.write_to(&mut fusebuf);
-            let rename2in = FuseRename2In::new(1, 1);
-            rename2in.write_to(&mut fusebuf[40..]);
-            fusebuf[56..56 + old_len].copy_from_slice(old.as_bytes());
-            fusebuf[57 + old_len..57 + old_len + new_len].copy_from_slice(new.as_bytes());
-            fusein.print();
-            rename2in.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1662,21 +1679,22 @@ impl FuseNode {
         let lseek_error;
         let mut lseekout = 0;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(64, FuseOpcode::FuseLseek as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 64];
+        fusein.write_to(&mut fusebuf);
+        let lseekin = FuseLseekIn::new(fh, offset, whence);
+        lseekin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        lseekin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseLseek as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 64];
-            fusein.write_to(&mut fusebuf);
-            let lseekin = FuseLseekIn::new(fh, offset, whence);
-            lseekin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            lseekin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1737,18 +1755,19 @@ impl FuseNode {
 
         let destroy_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(40, FuseOpcode::FuseDestroy as u32, unique_id, 1, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 40];
+        fusein.write_to(&mut fusebuf);
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseDestroy as u32, UNIQUE_ID, 1, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 40];
-            fusein.write_to(&mut fusebuf);
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1801,7 +1820,7 @@ impl FuseNode {
         }
 
         unsafe {
-            UNIQUE_ID = 0;
+            UNIQUE_ID.store(0, Ordering::Relaxed);
             INITFLAG.store(1, Ordering::Relaxed);
             FUSE_VEC = None;
         }
@@ -1823,25 +1842,26 @@ impl VfsNodeOps for FuseNode {
         let open_error;
         let mut openout = FuseOpenOut::default();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        let mut flags = self.file_flags();
+        if flags == 0x8001 {
+            flags = 0x8002;
+        }
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
+
+        let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpen as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 48];
+        fusein.write_to(&mut fusebuf);
+        let openin = FuseOpenIn::new(flags, 0);
+        openin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        openin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            let mut flags = self.file_flags();
-            if flags == 0x8001 {
-                flags = 0x8002;
-            }
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
-
-            let fusein = FuseInHeader::new(48, FuseOpcode::FuseOpen as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 48];
-            fusein.write_to(&mut fusebuf);
-            let openin = FuseOpenIn::new(flags, 0);
-            openin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            openin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1909,22 +1929,23 @@ impl VfsNodeOps for FuseNode {
 
         let release_error;
 
-        unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            let flags = self.get_node_flags();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        let flags = self.get_node_flags();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
             
-            let fusein = FuseInHeader::new(64, FuseOpcode::FuseRelease as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 64];
-            fusein.write_to(&mut fusebuf);
-            let releasein = FuseReleaseIn::new(fh, flags, 0, 0);
-            releasein.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            releasein.print();
+        let fusein = FuseInHeader::new(64, FuseOpcode::FuseRelease as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 64];
+        fusein.write_to(&mut fusebuf);
+        let releasein = FuseReleaseIn::new(fh, flags, 0, 0);
+        releasein.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        releasein.print();
 
+        unsafe {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -1985,21 +2006,22 @@ impl VfsNodeOps for FuseNode {
     
         let attr_size;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(56, FuseOpcode::FuseGetattr as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 56];
+        fusein.write_to(&mut fusebuf);
+        let getattrin = FuseGetattrIn::new(0, 0, fh);
+        getattrin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        getattrin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(56, FuseOpcode::FuseGetattr as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 56];
-            fusein.write_to(&mut fusebuf);
-            let getattrin = FuseGetattrIn::new(0, 0, fh);
-            getattrin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            getattrin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -2057,12 +2079,12 @@ impl VfsNodeOps for FuseNode {
     }
 
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        info!("\nFUSE READ AT({:?}) here, offset: {:?}, buf_len: {:?}\n", FuseOpcode::FuseRead as u32, offset, buf.len());
+        info!("\nFUSE READ AT here, offset: {:?}, buf_len: {:?}\n", offset, buf.len());
         let mut remain = buf.len();
         let mut cur_offset = offset;
         let mut start = 0;
         while remain > 0 {
-            let cur = remain.min(65536);
+            let cur = remain.min(4096);
             let read_len = self.read(cur_offset, &mut buf[start..start+cur])?;
             cur_offset += read_len as u64;
             start += read_len;
@@ -2083,28 +2105,29 @@ impl VfsNodeOps for FuseNode {
         let write_error;
         let writeout;
 
-        unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let buf_len = buf.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            let flags = self.file_flags();
-            // let mut flags_guard = self.flags.lock();
-            // let wflags = &mut *flags_guard;
-            // *wflags = flags;
-            self.set_node_flags(flags);
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let buf_len = buf.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        let flags = self.file_flags();
+        // let mut flags_guard = self.flags.lock();
+        // let wflags = &mut *flags_guard;
+        // *wflags = flags;
+        self.set_node_flags(flags);
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}, flags: {:#x}", pid, nodeid, fh, self.is_dir(), flags);
             
-            let fusein = FuseInHeader::new(80 + buf_len as u32, FuseOpcode::FuseWrite as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 72000];
-            fusein.write_to(&mut fusebuf);
-            let writein = FuseWriteIn::new(fh, offset, (buf_len+1) as u32, 0, 0, flags);
-            writein.write_to(&mut fusebuf[40..]);
-            fusebuf[80..80 + buf_len].copy_from_slice(buf);
-            fusein.print();
-            writein.print();
+        let fusein = FuseInHeader::new(80 + buf_len as u32, FuseOpcode::FuseWrite as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 72000];
+        fusein.write_to(&mut fusebuf);
+        let writein = FuseWriteIn::new(fh, offset, (buf_len+1) as u32, 0, 0, flags);
+        writein.write_to(&mut fusebuf[40..]);
+        fusebuf[80..80 + buf_len].copy_from_slice(buf);
+        fusein.print();
+        writein.print();
 
+        unsafe {
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -2168,18 +2191,19 @@ impl VfsNodeOps for FuseNode {
 
         let fsync_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(40, FuseOpcode::FuseFsync as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 40];
+        fusein.write_to(&mut fusebuf);
+        fusein.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(40, FuseOpcode::FuseFsync as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 40];
-            fusein.write_to(&mut fusebuf);
-            fusein.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -2277,23 +2301,24 @@ impl VfsNodeOps for FuseNode {
         let createout;
         let openout;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let path_len = path.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(57 + path_len as u32, FuseOpcode::FuseCreate as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 180];
+        fusein.write_to(&mut fusebuf);
+        let createin = FuseCreateIn::new(0x8241, 0x81a4, 18, 0);
+        createin.write_to(&mut fusebuf[40..]);
+        fusebuf[56..56+path_len].copy_from_slice(path.as_bytes());
+        fusein.print();
+        createin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let path_len = path.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(57 + path_len as u32, FuseOpcode::FuseCreate as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 180];
-            fusein.write_to(&mut fusebuf);
-            let createin = FuseCreateIn::new(0x8241, 0x81a4, 18, 0);
-            createin.write_to(&mut fusebuf[40..]);
-            fusebuf[56..56+path_len].copy_from_slice(path.as_bytes());
-            fusein.print();
-            createin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -2378,21 +2403,22 @@ impl VfsNodeOps for FuseNode {
         let readdir_error;
         let mut dirs = Vec::<FuseDirent>::new();
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+
+        let fusein = FuseInHeader::new(80, FuseOpcode::FuseReaddir as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 80];
+        fusein.write_to(&mut fusebuf);
+        let readin = FuseReadIn::new(fh, 0, 4096, 0, 0, 0x18800);
+        readin.write_to(&mut fusebuf[40..]);
+        fusein.print();
+        readin.print();
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-
-            let fusein = FuseInHeader::new(80, FuseOpcode::FuseReaddir as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 80];
-            fusein.write_to(&mut fusebuf);
-            let readin = FuseReadIn::new(fh, 0, 4096, 0, 0, 0x18800);
-            readin.write_to(&mut fusebuf[40..]);
-            fusein.print();
-            readin.print();
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
@@ -2490,12 +2516,11 @@ impl VfsNodeOps for FuseNode {
         info!("fuse_node(inode: {:?}) rename src: {:?}, dst: {:?}", self.get_node_inode(), src_path, dst_path);
         
         let newid;
-        unsafe {
-            if NEWID == -1 {
-                NEWID = self.find_inode(dst_path).unwrap() as i64;
-            }
-            newid = NEWID as u64;
+
+        if NEWID.load(Ordering::SeqCst) == -1 {
+            NEWID.store(self.find_inode(dst_path).unwrap() as i32, Ordering::Relaxed);
         }
+        newid = NEWID.load(Ordering::SeqCst);
 
         let (src_name, src_rest1) = split_path(src_path);
         if let Some(src_rest) = src_rest1 {
@@ -2518,28 +2543,29 @@ impl VfsNodeOps for FuseNode {
 
         let rename_error;
 
+        UNIQUE_ID.fetch_add(2, Ordering::Relaxed);
+        let unique_id = UNIQUE_ID.load(Ordering::SeqCst);
+        let pid = current().id().as_u64();
+        let src_len = src_name.len();
+        let dst_len = dst_name.len();
+        let nodeid = self.get_node_inode();
+        let fh = self.get_fh();
+        info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
+        info!("src_name = {:?}, dst_name = {:?}, src_len = {:?}, dst_len = {:?}", src_name, dst_name, src_len, dst_len);
+
+        let fusein = FuseInHeader::new(50 + (src_len + dst_len) as u32, FuseOpcode::FuseRename as u32, unique_id, nodeid, 1000, 1000, pid as u32);
+        let mut fusebuf = [0; 280];
+        fusein.write_to(&mut fusebuf);
+        info!("oldid = {:?}, newid = {:?}", nodeid, newid);
+        let renamein = FuseRenameIn::new(newid as u64);
+        renamein.write_to(&mut fusebuf[40..]);
+        fusebuf[48..48 + src_len].copy_from_slice(src_name.as_bytes());
+        fusebuf[49 + src_len..49 + src_len + dst_len].copy_from_slice(dst_name.as_bytes());
+        fusein.print();
+        renamein.print();
+        NEWID.store(-1, Ordering::Relaxed);
+
         unsafe {
-            UNIQUE_ID += 2;
-            let pid = current().id().as_u64();
-            let src_len = src_name.len();
-            let dst_len = dst_name.len();
-            let nodeid = self.get_node_inode();
-            let fh = self.get_fh();
-            info!("pid = {:?}, inode = {:?}, fh = {:#x}, is_dir: {:?}", pid, nodeid, fh, self.is_dir());
-            info!("src_name = {:?}, dst_name = {:?}, src_len = {:?}, dst_len = {:?}", src_name, dst_name, src_len, dst_len);
-
-            let fusein = FuseInHeader::new(50 + (src_len + dst_len) as u32, FuseOpcode::FuseRename as u32, UNIQUE_ID, nodeid, 1000, 1000, pid as u32);
-            let mut fusebuf = [0; 280];
-            fusein.write_to(&mut fusebuf);
-            info!("oldid = {:?}, newid = {:?}", nodeid, newid);
-            let renamein = FuseRenameIn::new(newid);
-            renamein.write_to(&mut fusebuf[40..]);
-            fusebuf[48..48 + src_len].copy_from_slice(src_name.as_bytes());
-            fusebuf[49 + src_len..49 + src_len + dst_len].copy_from_slice(dst_name.as_bytes());
-            fusein.print();
-            renamein.print();
-            NEWID = -1;
-
             if let Some(vec_arc) = FUSE_VEC.as_ref() {
                 let mut vec = vec_arc.lock();
                 vec.extend_from_slice(&fusebuf);
